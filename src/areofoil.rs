@@ -1,4 +1,5 @@
-use ndarray::{Array1, Array3};
+use ndarray::{Array1, Array3, OwnedRepr, Ix3};
+use ndarray_interp::{interp2d::{Interp2D, Biliniar}, Interp2DVec};
 
 #[derive(Debug)]
 /// Coefficient of lift and drag
@@ -9,28 +10,40 @@ impl AsRef<[f64; 2]> for ClCd {
     }
 }
 
-/// The main aerofoil trait used by VAWT
-pub trait Aerofoil {
-    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number and angle of attack
-    fn cl_cd(&self, re: f64, alpha: f64) -> ClCd;
-}
 
 /// An Aerofoil implemented using a LUT.
-pub struct LutAerofoil {
-    /// Look up tabel for [cl, cd] over Re, alpha
-    lut: Array3<f64>,
-
-    /// alpha idx
-    alpha_idx: Array1<f64>,
-
-    /// Re idx
-    re_idx: Array1<f64>,
+#[derive(Debug)]
+pub struct Aerofoil {
+    lut: Interp2DVec<f64, Biliniar>
 }
 
-impl LutAerofoil {}
+impl Aerofoil {
+    pub fn builder() -> AerofoilBuilder {
+        AerofoilBuilder::new()
+    }
 
-impl Aerofoil for LutAerofoil {
-    fn cl_cd(&self, re: f64, alpha: f64) -> ClCd {
+    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number and angle of attack
+    pub fn cl_cd(&self, alpha: f64, re: f64) -> ClCd{
+        let clcd = self.lut.interp(alpha, re).unwrap();
+        assert!(clcd.len() == 2);
+        ClCd([clcd[0], clcd[1]])
+    }
+}
+
+#[derive(Debug)]
+pub struct AerofoilBuilder{
+    /// Look up tabel for [cl, cd] over Re, alpha
+    lut: Vec<Vec<[f64;2]>>,
+    alpha: Vec<f64>,
+    re: Vec<f64>,
+}
+
+impl AerofoilBuilder {
+    pub fn new() -> Self {
+        AerofoilBuilder { lut: Vec::new(), alpha: Vec::new(), re: Vec::new() }
+    } 
+    
+    pub fn build() -> Aerofoil{
         todo!()
     }
 }
