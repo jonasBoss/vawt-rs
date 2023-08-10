@@ -9,23 +9,23 @@ use crate::areofoil::Aerofoil;
 mod areofoil;
 
 fn main() {
-    let mut files = VecDeque::from([
-        "foo/cldAR/NACA0018Re0040.data",
+    let files = Vec::from([
         "foo/cldAR/NACA0018Re0080.data",
+        "foo/cldAR/NACA0018Re0040.data",
         "foo/cldAR/NACA0018Re0160.data",
     ]);
-    let re = array![40_000.0, 80_000.0, 160_000.0];
+    let re = array![80_000.0, 40_000.0, 160_000.0];
 
-    let arrays: Vec<_> = files.into_iter().map(read_array).collect();
-    let alpha = arrays[0].index_axis(Axis(1), 0).into_owned();
-    let arrays_slice: Vec<_> = arrays.iter().map(|a| a.view()).collect();
-    let mut data = stack(Axis(1), arrays_slice.as_slice()).unwrap();
-    data.slice_axis_inplace(Axis(2), Slice::from(1..));
+    let mut builder = Aerofoil::builder();
+    for (file, re) in files.into_iter().zip(re) {
+        builder = builder.add_data_row(read_array(file), re)
+    }
 
-    let aerofoil = Aerofoil::builder(data, alpha, re)
+    let aerofoil = builder
         .set_aspect_ratio(12.8)
         .update_aspect_ratio(true)
-        .build().unwrap();
+        .build()
+        .unwrap();
     println!("{aerofoil:?}")
 }
 

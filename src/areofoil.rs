@@ -1,5 +1,6 @@
-use ndarray::{Array, Array1, Array3, Dim, Ix3, OwnedRepr};
+use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr};
 use ndarray_interp::{
+    interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D},
     Interp2DVec,
 };
@@ -22,8 +23,8 @@ pub struct Aerofoil {
 }
 
 impl Aerofoil {
-    pub fn builder(data: Array3<f64>, alpha: Array1<f64>, re: Array1<f64>) -> AerofoilBuilder {
-        AerofoilBuilder::new(data, alpha, re)
+    pub fn builder() -> AerofoilBuilder {
+        AerofoilBuilder::new()
     }
 
     fn new(data: Interp2DVec<f64, Biliniar>, symmetric: bool) -> Self {
@@ -48,25 +49,30 @@ impl Aerofoil {
 
 #[derive(Debug)]
 pub struct AerofoilBuilder {
-    /// Look up tabel for [cl, cd] over Re, alpha
-    lut: Array3<f64>,
-    alpha: Array1<f64>,
-    re: Array1<f64>,
+    /// data rows for [alpha, cl, cd] over Re
+    data: Vec<Array2<f64>>,
+    re: Vec<f64>,
     symmetric: bool,
     aspect_ratio: f64,
     update_aspect_ratio: bool,
 }
 
 impl AerofoilBuilder {
-    pub fn new(data: Array3<f64>, alpha: Array1<f64>, re: Array1<f64>) -> Self {
+    pub fn new() -> Self {
         AerofoilBuilder {
-            lut: data,
-            alpha,
-            re,
+            data: Vec::new(),
+            re: Vec::new(),
             symmetric: true,
             aspect_ratio: f64::INFINITY,
             update_aspect_ratio: false,
         }
+    }
+
+    pub fn add_data_row(mut self, data: Array2<f64>, re: f64) -> Self {
+        assert!(!self.re.contains(&re));
+        self.data.push(data);
+        self.re.push(re);
+        self
     }
 
     /// When this is set, only data for positive angles of attack need to be provided.
@@ -76,16 +82,19 @@ impl AerofoilBuilder {
     }
 
     /// Assume the provided data to be for a infinite aspect ratio.
-    /// 
+    ///
     /// Updtate the data with the Lanchester-Prandtl model below the stalling angle
     /// and with the Viterna-Corrigan above the stall angle
+    ///
+    /// # Note
+    /// This is currently only for symmetric profiles implemented.
     pub fn update_aspect_ratio(mut self, yes: bool) -> Self {
         self.update_aspect_ratio = yes;
         self
     }
 
-    /// set the aspect ratio of the areofoil. 
-    /// 
+    /// set the aspect ratio of the areofoil.
+    ///
     /// When the data does not reflect this aspect ratio,
     /// but instead is profile data for an infinte aspect ratio set [`update_aspect_ratio`]
     pub fn set_aspect_ratio(mut self, ar: f64) -> Self {
@@ -93,31 +102,81 @@ impl AerofoilBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Aerofoil, AerofoilBuildError> {
+    pub fn build(mut self) -> Result<Aerofoil, AerofoilBuildError> {
+        if self.update_aspect_ratio {
+            self.change_ar()
+        }
+
         let AerofoilBuilder {
-            lut,
-            alpha,
+            mut data,
             re,
             symmetric,
             aspect_ratio,
             update_aspect_ratio,
         } = self;
-        let expected = Ix3(alpha.len(), re.len(), 2);
-        if !(lut.raw_dim() == expected) {
-            return Err(AerofoilBuildError::WrongDataShape(expected, lut.raw_dim()));
-        };
 
-        if update_aspect_ratio && (aspect_ratio < 98.0) {
+        // the order of re is not guaranteed, sort it accoridngly
+        let mut data = re.into_iter().zip(data).collect::<Vec<_>>();
+        data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let (re, mut data) = data.into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut re_acc, mut d_acc), (re, d)| {
+                re_acc.push(re);
+                d_acc.push(d);
+                (re_acc, d_acc)
+            },
+        );
 
-        }
+        // resample the data so that we get a grid whith all unique alpha values
+        let mut alpha: Vec<f64> = data
+            .iter()
+            .flat_map(|arr| arr.slice(s![.., 0]).into_iter().map(|f| *f))
+            .collect();
+        alpha.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let alpha = Array::from_iter(alpha.into_iter().fold(Vec::new(), |mut acc, f| {
+            match acc.last() {
+                None => acc.push(f),
+                Some(&last) => {
+                    if last != f {
+                        acc.push(f)
+                    }
+                }
+            };
+            acc
+        }));
+        data = data
+            .into_iter()
+            .map(|arr| {
+                let clcd = arr.slice(s![.., 1..]);
+                let alpha = arr.index_axis(Axis(1), 0);
+                Interp1D::builder(clcd)
+                    .x(alpha)
+                    .strategy(Linear::new().extrapolate(true))
+                    .build()
+                    .unwrap()
+                    .interp_array(&alpha)
+                    .unwrap()
+            })
+            .collect();
+        let data = stack(Axis(1), &*data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
 
-
-        let lut = Interp2D::builder(lut)
+        let lut = Interp2D::builder(data)
             .x(alpha)
-            .y(re)
+            .y(Array::from(re))
             .strategy(Biliniar)
             .build()?;
         Ok(Aerofoil::new(lut, symmetric))
+    }
+
+    fn change_ar(&mut self) {
+        if self.aspect_ratio >= 98.0 {
+            return;
+        }
+
+        //let mut new_data = Array::zeros(self.lut.raw_dim());
+        //let mut new_alpha = Array::zeros(self.alpha.raw_dim());
+
+        //for
     }
 }
 
