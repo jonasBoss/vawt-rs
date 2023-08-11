@@ -1,4 +1,6 @@
-use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr};
+use std::f64::consts::PI;
+
+use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr, Slice, ArrayViewMut1, ArrayBase, ArrayView1};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec}, vector_extensions::{VectorExtensions, Monotonic},
@@ -176,13 +178,24 @@ impl AerofoilBuilder {
             return;
         }
         for data in self.data.iter_mut(){
-            
+            let zero_idx = data.index_axis(Axis(0), 0).get_lower_index(0.0);
+            let mut stall_idx = None;
+            let mut last_cl = data[(1,zero_idx)];
+            for (idx, mut datapoint) in data.slice_axis_mut(Axis(0), Slice::new((zero_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)).enumerate() {
+                if last_cl > datapoint.cl() {
+                    stall_idx = Some(idx + zero_idx);
+                    break; // cl has dropped (stall)
+                }
+                last_cl = datapoint.cl();
+                datapoint.lanchester_prandtl(self.aspect_ratio);
+            }
+            let stall_idx = stall_idx.unwrap_or_else(||panic!("stall point not found!"));
+            let stall = data.index_axis(Axis(0), stall_idx).into_owned();
+            for mut datapoint in data.slice_axis_mut(Axis(0), Slice::new((stall_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)) {
+                datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
+            }
+            todo!("negative alpha")
         }
-
-        //let mut new_data = Array::zeros(self.lut.raw_dim());
-        //let mut new_alpha = Array::zeros(self.alpha.raw_dim());
-
-        //for
     }
 }
 
@@ -202,9 +215,67 @@ impl From<ndarray_interp::BuilderError> for AerofoilBuildError {
     fn from(value: ndarray_interp::BuilderError) -> Self {
         match value {
             ndarray_interp::BuilderError::NotEnoughData(s) => AerofoilBuildError::NotEnoughtData(s),
-            ndarray_interp::BuilderError::Monotonic(s) => unreachable!(),
+            ndarray_interp::BuilderError::Monotonic(_) => unreachable!(),
             ndarray_interp::BuilderError::AxisLenght(_) => unreachable!(),
             ndarray_interp::BuilderError::DimensionError(_) => unreachable!(),
         }
+    }
+}
+
+
+trait DataPoint{
+    fn a(&self) -> f64;
+    fn cl(&self) -> f64;
+    fn cd(&self) -> f64;
+    fn lanchester_prandtl(&mut self, aspect_ratio: f64);
+    fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64);
+}
+
+impl<'a> DataPoint for ArrayViewMut1<'a, f64>{
+    fn a(&self) -> f64 {
+        self[0]
+    }
+
+    fn cl(&self) -> f64 {
+        self[1]
+    }
+
+    fn cd(&self) -> f64 {
+        self[2]
+    }
+
+    fn lanchester_prandtl(&mut self, aspect_ratio: f64){
+        self[2] = self.cd() + self.cl().powi(2) /(PI * aspect_ratio);
+        self[0] = self.a() + self.cl() / (PI * aspect_ratio);
+    }
+
+    fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
+        let cd_max = if aspect_ratio > 50.0 {2.01} else {1.1+0.018*aspect_ratio};
+        let kd = (stall.cd() - cd_max * stall.a().sin().powi(2))/stall.a().cos();
+        let kl = (stall.cl() - cd_max * stall.a().sin() * stall.a().cos()) * stall.a().sin() / stall.a().cos().powi(2);
+        self[1] = cd_max/2.0* (2.0*self.a()).sin() + kl * self.a().cos().powi(2)/self.a().sin();
+        self[2] = cd_max * self.a().sin().powi(2) + kd * self.a().cos();
+    }
+}
+
+impl<'a> DataPoint for ArrayView1<'a, f64>{
+    fn a(&self) -> f64 {
+        self[0]
+    }
+
+    fn cl(&self) -> f64 {
+        self[1]
+    }
+
+    fn cd(&self) -> f64 {
+        self[2]
+    }
+
+    fn lanchester_prandtl(&mut self, aspect_ratio: f64){
+        todo!("not possible")
+    }
+
+    fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
+        todo!("not possible")
     }
 }
