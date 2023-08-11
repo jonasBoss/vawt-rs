@@ -9,5 +9,5 @@ edition = "2021"
 csv = "1.2.2"
 ndarray = "0.15.6"
 ndarray-csv = "0.5.2"
-ndarray-interp = {git = "https://github.com/jonasBoss/ndarray-interp.git"}
+ndarray-interp = {path = "../ndarray-interp"}
 thiserror = "1.0.44"

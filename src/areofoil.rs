@@ -1,8 +1,7 @@
 use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
-    interp2d::{Biliniar, Interp2D},
-    Interp2DVec,
+    interp2d::{Biliniar, Interp2D, Interp2DVec},
 };
 use thiserror::Error;
 
@@ -171,6 +170,9 @@ impl AerofoilBuilder {
     fn change_ar(&mut self) {
         if self.aspect_ratio >= 98.0 {
             return;
+        }
+        for data in self.data.iter_mut(){
+            
         }
 
         //let mut new_data = Array::zeros(self.lut.raw_dim());
