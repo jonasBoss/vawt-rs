@@ -1,7 +1,7 @@
 use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
-    interp2d::{Biliniar, Interp2D, Interp2DVec},
+    interp2d::{Biliniar, Interp2D, Interp2DVec}, vector_extensions::{VectorExtensions, Monotonic},
 };
 use thiserror::Error;
 
@@ -67,11 +67,15 @@ impl AerofoilBuilder {
         }
     }
 
-    pub fn add_data_row(mut self, data: Array2<f64>, re: f64) -> Self {
-        assert!(!self.re.contains(&re));
+    /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`
+    /// the data must be strict monotonic rising over alpha, and the reynolds number must be new
+    pub fn add_data_row(&mut self, data: Array2<f64>, re: f64) -> Result<&mut Self, AerofoilBuildError> {
+        if self.re.contains(&re){return Err(AerofoilBuildError::Duplicate(re));};
+        if data.shape()[1] != 3 {return Err(AerofoilBuildError::ShapeError("data must contain 3 elements in the second dimension".into()));};
+        if !matches!(data.index_axis(Axis(0), 0).monotonic_prop(), Monotonic::Rising { strict: true }) {return Err(AerofoilBuildError::Monotonic("alpha values must be strict monotonic rising".into()));};
         self.data.push(data);
         self.re.push(re);
-        self
+        Ok(self)
     }
 
     /// When this is set, only data for positive angles of attack need to be provided.
@@ -184,19 +188,21 @@ impl AerofoilBuilder {
 
 #[derive(Debug, Error)]
 pub enum AerofoilBuildError {
-    #[error("data must have shape `[alpha.len(), re.len(), 2]` \n expected: {0:?}, found: {1:?}")]
-    WrongDataShape(Ix3, Ix3),
+    #[error("{0}")]
+    ShapeError(String),
     #[error("{0}")]
     NotEnoughtData(String),
     #[error("{0}")]
     Monotonic(String),
+    #[error("data for the reynolds-number {0} is already stored")]
+    Duplicate(f64),
 }
 
 impl From<ndarray_interp::BuilderError> for AerofoilBuildError {
     fn from(value: ndarray_interp::BuilderError) -> Self {
         match value {
             ndarray_interp::BuilderError::NotEnoughData(s) => AerofoilBuildError::NotEnoughtData(s),
-            ndarray_interp::BuilderError::Monotonic(s) => AerofoilBuildError::Monotonic(s),
+            ndarray_interp::BuilderError::Monotonic(s) => unreachable!(),
             ndarray_interp::BuilderError::AxisLenght(_) => unreachable!(),
             ndarray_interp::BuilderError::DimensionError(_) => unreachable!(),
         }

@@ -18,7 +18,7 @@ fn main() {
 
     let mut builder = Aerofoil::builder();
     for (file, re) in files.into_iter().zip(re) {
-        builder = builder.add_data_row(read_array(file), re)
+        builder.add_data_row(read_array(file), re).unwrap();
     }
 
     let aerofoil = builder
