@@ -1,9 +1,13 @@
 use std::f64::consts::PI;
 
-use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr, Slice, ArrayViewMut1, ArrayBase, ArrayView1, ArrayD};
+use ndarray::{
+    s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayD, ArrayView1, ArrayViewMut1, Axis,
+    Dim, Ix3, OwnedRepr, Slice,
+};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
-    interp2d::{Biliniar, Interp2D, Interp2DVec}, vector_extensions::{VectorExtensions, Monotonic},
+    interp2d::{Biliniar, Interp2D, Interp2DVec},
+    vector_extensions::{Monotonic, VectorExtensions},
 };
 use thiserror::Error;
 
@@ -71,10 +75,27 @@ impl AerofoilBuilder {
 
     /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`
     /// the data must be strict monotonic rising over alpha, and the reynolds number must be new
-    pub fn add_data_row(&mut self, data: Array2<f64>, re: f64) -> Result<&mut Self, AerofoilBuildError> {
-        if self.re.contains(&re){return Err(AerofoilBuildError::Duplicate(re));};
-        if data.shape()[1] != 3 {return Err(AerofoilBuildError::ShapeError("data must contain 3 elements in the second dimension".into()));};
-        if !matches!(data.index_axis(Axis(1), 0).monotonic_prop(), Monotonic::Rising { strict: true }) {return Err(AerofoilBuildError::Monotonic("alpha values must be strict monotonic rising".into()));};
+    pub fn add_data_row(
+        &mut self,
+        data: Array2<f64>,
+        re: f64,
+    ) -> Result<&mut Self, AerofoilBuildError> {
+        if self.re.contains(&re) {
+            return Err(AerofoilBuildError::Duplicate(re));
+        };
+        if data.shape()[1] != 3 {
+            return Err(AerofoilBuildError::ShapeError(
+                "data must contain 3 elements in the second dimension".into(),
+            ));
+        };
+        if !matches!(
+            data.index_axis(Axis(1), 0).monotonic_prop(),
+            Monotonic::Rising { strict: true }
+        ) {
+            return Err(AerofoilBuildError::Monotonic(
+                "alpha values must be strict monotonic rising".into(),
+            ));
+        };
         self.data.push(data);
         self.re.push(re);
         Ok(self)
@@ -150,7 +171,7 @@ impl AerofoilBuilder {
             acc
         }));
 
-        for arr in data.iter_mut(){
+        for arr in data.iter_mut() {
             let clcd = arr.slice(s![.., 1..]);
             let alpha = arr.index_axis(Axis(1), 0);
             *arr = Interp1D::builder(clcd)
@@ -160,8 +181,7 @@ impl AerofoilBuilder {
                 .unwrap()
                 .interp_array(&alpha_new)
                 .unwrap()
-            };
-
+        }
 
         let data = stack(Axis(1), &*data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
 
@@ -177,11 +197,15 @@ impl AerofoilBuilder {
         if self.aspect_ratio >= 98.0 {
             return;
         }
-        for data in self.data.iter_mut(){
+        for data in self.data.iter_mut() {
             let zero_idx = data.index_axis(Axis(0), 0).get_lower_index(0.0);
             let mut stall_idx = None;
-            let mut last_cl = data[(zero_idx,1)];
-            for (idx, mut datapoint) in data.slice_axis_mut(Axis(0), Slice::new((zero_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)).enumerate() {
+            let mut last_cl = data[(zero_idx, 1)];
+            for (idx, mut datapoint) in data
+                .slice_axis_mut(Axis(0), Slice::new((zero_idx + 1) as isize, None, 1))
+                .axis_iter_mut(Axis(0))
+                .enumerate()
+            {
                 if last_cl > datapoint.cl() {
                     stall_idx = Some(idx + zero_idx);
                     break; // cl has dropped (stall)
@@ -189,20 +213,31 @@ impl AerofoilBuilder {
                 last_cl = datapoint.cl();
                 datapoint.lanchester_prandtl(self.aspect_ratio);
             }
-            let stall_idx = stall_idx.unwrap_or_else(||panic!("stall point not found!"));
+            let stall_idx = stall_idx.unwrap_or_else(|| panic!("stall point not found!"));
             let stall = data.index_axis(Axis(0), stall_idx).into_owned();
 
             // above the stall point we calculate the data for each degree up to 90
             let new_len = stall_idx + 90 + 1 - stall[0].floor() as usize;
             let mut new_data = Array::zeros((new_len, 3));
-            new_data.slice_axis_mut(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)).assign(&data.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)));
-            new_data.slice_mut(s![(stall_idx+1).., 0]).assign(&Array::linspace(stall[0].ceil(), 90.0, new_len - stall_idx - 1));
+            new_data
+                .slice_axis_mut(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1))
+                .assign(&data.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)));
+            new_data
+                .slice_mut(s![(stall_idx + 1).., 0])
+                .assign(&Array::linspace(
+                    stall[0].ceil(),
+                    90.0,
+                    new_len - stall_idx - 1,
+                ));
             *data = new_data;
 
-            for mut datapoint in data.slice_axis_mut(Axis(0), Slice::new((stall_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)) {
+            for mut datapoint in data
+                .slice_axis_mut(Axis(0), Slice::new((stall_idx + 1) as isize, None, 1))
+                .axis_iter_mut(Axis(0))
+            {
                 datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
             }
-            
+
             if self.symmetric {
                 continue;
             }
@@ -234,7 +269,6 @@ impl From<ndarray_interp::BuilderError> for AerofoilBuildError {
     }
 }
 
-
 macro_rules! dsin {
     ($f:expr) => {
         $f.to_radians().sin()
@@ -246,7 +280,7 @@ macro_rules! dcos {
     };
 }
 
-trait DataPoint{
+trait DataPoint {
     fn a(&self) -> f64;
     fn cl(&self) -> f64;
     fn cd(&self) -> f64;
@@ -254,7 +288,7 @@ trait DataPoint{
     fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64);
 }
 
-impl<'a> DataPoint for ArrayViewMut1<'a, f64>{
+impl<'a> DataPoint for ArrayViewMut1<'a, f64> {
     fn a(&self) -> f64 {
         self[0]
     }
@@ -267,21 +301,27 @@ impl<'a> DataPoint for ArrayViewMut1<'a, f64>{
         self[2]
     }
 
-    fn lanchester_prandtl(&mut self, aspect_ratio: f64){
-        self[2] = self.cd() + self.cl().powi(2) /(PI * aspect_ratio);
+    fn lanchester_prandtl(&mut self, aspect_ratio: f64) {
+        self[2] = self.cd() + self.cl().powi(2) / (PI * aspect_ratio);
         self[0] = (self.a().to_radians() + self.cl() / (PI * aspect_ratio)).to_degrees();
     }
 
     fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
-        let cd_max = if aspect_ratio > 50.0 {2.01} else {1.1+0.018*aspect_ratio};
-        let kd = (stall.cd() - cd_max * dsin!(stall.a()).powi(2))/dcos!(stall.a());
-        let kl = (stall.cl() - cd_max * dsin!(stall.a()) * dcos!(stall.a())) * dsin!(stall.a()) / dcos!(stall.a()).powi(2);
-        self[1] = cd_max/2.0* dsin!(2.0*self.a()) + kl * dcos!(self.a()).powi(2)/dsin!(self.a());
+        let cd_max = if aspect_ratio > 50.0 {
+            2.01
+        } else {
+            1.1 + 0.018 * aspect_ratio
+        };
+        let kd = (stall.cd() - cd_max * dsin!(stall.a()).powi(2)) / dcos!(stall.a());
+        let kl = (stall.cl() - cd_max * dsin!(stall.a()) * dcos!(stall.a())) * dsin!(stall.a())
+            / dcos!(stall.a()).powi(2);
+        self[1] =
+            cd_max / 2.0 * dsin!(2.0 * self.a()) + kl * dcos!(self.a()).powi(2) / dsin!(self.a());
         self[2] = cd_max * dsin!(self.a()).powi(2) + kd * dcos!(self.a());
     }
 }
 
-impl<'a> DataPoint for ArrayView1<'a, f64>{
+impl<'a> DataPoint for ArrayView1<'a, f64> {
     fn a(&self) -> f64 {
         self[0]
     }
@@ -294,7 +334,7 @@ impl<'a> DataPoint for ArrayView1<'a, f64>{
         self[2]
     }
 
-    fn lanchester_prandtl(&mut self, aspect_ratio: f64){
+    fn lanchester_prandtl(&mut self, aspect_ratio: f64) {
         todo!("not possible")
     }
 
