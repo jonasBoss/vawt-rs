@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, fs::File};
+use std::fs::File;
 
-use csv::{ReaderBuilder, StringRecord};
-use ndarray::{array, concatenate, s, stack, Array1, Array2, Array3, Axis, Slice};
+use csv::ReaderBuilder;
+use ndarray::{array, Array2};
 use ndarray_csv::Array2Reader;
 
 use crate::areofoil::Aerofoil;
@@ -24,6 +24,7 @@ fn main() {
     let aerofoil = builder
         .set_aspect_ratio(12.8)
         .update_aspect_ratio(true)
+        .symmetric(true)
         .build()
         .unwrap();
     println!("{aerofoil:?}")

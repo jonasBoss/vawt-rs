@@ -1,9 +1,6 @@
 use std::f64::consts::PI;
 
-use ndarray::{
-    s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayD, ArrayView1, ArrayViewMut1, Axis,
-    Dim, Ix3, OwnedRepr, Slice,
-};
+use ndarray::{s, stack, Array, Array2, ArrayView1, ArrayViewMut1, Axis, Slice};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec},
@@ -67,7 +64,7 @@ impl AerofoilBuilder {
         AerofoilBuilder {
             data: Vec::new(),
             re: Vec::new(),
-            symmetric: true,
+            symmetric: false,
             aspect_ratio: f64::INFINITY,
             update_aspect_ratio: false,
         }
@@ -137,8 +134,7 @@ impl AerofoilBuilder {
             data,
             re,
             symmetric,
-            aspect_ratio,
-            update_aspect_ratio,
+            ..
         } = self;
 
         // the order of re is not guaranteed, sort it accoridngly
@@ -153,10 +149,10 @@ impl AerofoilBuilder {
             },
         );
 
-        // resample the data so that we get a grid whith all unique alpha values
+        // the alpha values for the datarows may not agree, so we need create a new alpha axis which contains all unique values
         let mut alpha_new: Vec<f64> = data
             .iter()
-            .flat_map(|arr| arr.slice(s![.., 0]).into_iter().map(|f| *f))
+            .flat_map(|arr| arr.slice(s![.., 0]).into_iter().copied())
             .collect();
         alpha_new.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let alpha_new = Array::from_iter(alpha_new.into_iter().fold(Vec::new(), |mut acc, f| {
@@ -170,11 +166,11 @@ impl AerofoilBuilder {
             };
             acc
         }));
-
-        for arr in data.iter_mut() {
-            let clcd = arr.slice(s![.., 1..]);
-            let alpha = arr.index_axis(Axis(1), 0);
-            *arr = Interp1D::builder(clcd)
+        // resample the data rows with the new alpha axis by interpolating linearly. Also drop the old alpha row from each datarow
+        for data_row in data.iter_mut() {
+            let clcd = data_row.slice(s![.., 1..]);
+            let alpha = data_row.index_axis(Axis(1), 0);
+            *data_row = Interp1D::builder(clcd)
                 .x(alpha)
                 .strategy(Linear::new().extrapolate(true))
                 .build()
@@ -183,7 +179,8 @@ impl AerofoilBuilder {
                 .unwrap()
         }
 
-        let data = stack(Axis(1), &*data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
+        // stack the datarows into a 3d array with alpha as the first axis, re as the second and [cl, cd] as the third
+        let data = stack(Axis(1), &data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
 
         let lut = Interp2D::builder(data)
             .x(alpha_new)
@@ -197,11 +194,11 @@ impl AerofoilBuilder {
         if self.aspect_ratio >= 98.0 {
             return;
         }
-        for data in self.data.iter_mut() {
-            let zero_idx = data.index_axis(Axis(0), 0).get_lower_index(0.0);
+        for data_row in self.data.iter_mut() {
+            let zero_idx = data_row.index_axis(Axis(0), 0).get_lower_index(0.0);
             let mut stall_idx = None;
-            let mut last_cl = data[(zero_idx, 1)];
-            for (idx, mut datapoint) in data
+            let mut last_cl = data_row[(zero_idx, 1)];
+            for (idx, mut datapoint) in data_row
                 .slice_axis_mut(Axis(0), Slice::new((zero_idx + 1) as isize, None, 1))
                 .axis_iter_mut(Axis(0))
                 .enumerate()
@@ -214,14 +211,16 @@ impl AerofoilBuilder {
                 datapoint.lanchester_prandtl(self.aspect_ratio);
             }
             let stall_idx = stall_idx.unwrap_or_else(|| panic!("stall point not found!"));
-            let stall = data.index_axis(Axis(0), stall_idx).into_owned();
+            let stall = data_row.index_axis(Axis(0), stall_idx).into_owned();
 
             // above the stall point we calculate the data for each degree up to 90
             let new_len = stall_idx + 90 + 1 - stall[0].floor() as usize;
             let mut new_data = Array::zeros((new_len, 3));
             new_data
                 .slice_axis_mut(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1))
-                .assign(&data.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)));
+                .assign(
+                    &data_row.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)),
+                );
             new_data
                 .slice_mut(s![(stall_idx + 1).., 0])
                 .assign(&Array::linspace(
@@ -229,9 +228,9 @@ impl AerofoilBuilder {
                     90.0,
                     new_len - stall_idx - 1,
                 ));
-            *data = new_data;
+            *data_row = new_data;
 
-            for mut datapoint in data
+            for mut datapoint in data_row
                 .slice_axis_mut(Axis(0), Slice::new((stall_idx + 1) as isize, None, 1))
                 .axis_iter_mut(Axis(0))
             {
@@ -334,11 +333,11 @@ impl<'a> DataPoint for ArrayView1<'a, f64> {
         self[2]
     }
 
-    fn lanchester_prandtl(&mut self, aspect_ratio: f64) {
+    fn lanchester_prandtl(&mut self, _aspect_ratio: f64) {
         todo!("not possible")
     }
 
-    fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
+    fn viterna_corrigan(&mut self, _stall: ArrayView1<f64>, _aspect_ratio: f64) {
         todo!("not possible")
     }
 }
