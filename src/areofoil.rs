@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr, Slice, ArrayViewMut1, ArrayBase, ArrayView1};
+use ndarray::{s, stack, Array, Array1, Array2, Array3, Axis, Dim, Ix3, OwnedRepr, Slice, ArrayViewMut1, ArrayBase, ArrayView1, ArrayD};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec}, vector_extensions::{VectorExtensions, Monotonic},
@@ -74,7 +74,7 @@ impl AerofoilBuilder {
     pub fn add_data_row(&mut self, data: Array2<f64>, re: f64) -> Result<&mut Self, AerofoilBuildError> {
         if self.re.contains(&re){return Err(AerofoilBuildError::Duplicate(re));};
         if data.shape()[1] != 3 {return Err(AerofoilBuildError::ShapeError("data must contain 3 elements in the second dimension".into()));};
-        if !matches!(data.index_axis(Axis(0), 0).monotonic_prop(), Monotonic::Rising { strict: true }) {return Err(AerofoilBuildError::Monotonic("alpha values must be strict monotonic rising".into()));};
+        if !matches!(data.index_axis(Axis(1), 0).monotonic_prop(), Monotonic::Rising { strict: true }) {return Err(AerofoilBuildError::Monotonic("alpha values must be strict monotonic rising".into()));};
         self.data.push(data);
         self.re.push(re);
         Ok(self)
@@ -113,7 +113,7 @@ impl AerofoilBuilder {
         }
 
         let AerofoilBuilder {
-            mut data,
+            data,
             re,
             symmetric,
             aspect_ratio,
@@ -133,12 +133,12 @@ impl AerofoilBuilder {
         );
 
         // resample the data so that we get a grid whith all unique alpha values
-        let mut alpha: Vec<f64> = data
+        let mut alpha_new: Vec<f64> = data
             .iter()
             .flat_map(|arr| arr.slice(s![.., 0]).into_iter().map(|f| *f))
             .collect();
-        alpha.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let alpha = Array::from_iter(alpha.into_iter().fold(Vec::new(), |mut acc, f| {
+        alpha_new.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let alpha_new = Array::from_iter(alpha_new.into_iter().fold(Vec::new(), |mut acc, f| {
             match acc.last() {
                 None => acc.push(f),
                 Some(&last) => {
@@ -149,24 +149,24 @@ impl AerofoilBuilder {
             };
             acc
         }));
-        data = data
-            .into_iter()
-            .map(|arr| {
-                let clcd = arr.slice(s![.., 1..]);
-                let alpha = arr.index_axis(Axis(1), 0);
-                Interp1D::builder(clcd)
-                    .x(alpha)
-                    .strategy(Linear::new().extrapolate(true))
-                    .build()
-                    .unwrap()
-                    .interp_array(&alpha)
-                    .unwrap()
-            })
-            .collect();
+
+        for arr in data.iter_mut(){
+            let clcd = arr.slice(s![.., 1..]);
+            let alpha = arr.index_axis(Axis(1), 0);
+            *arr = Interp1D::builder(clcd)
+                .x(alpha)
+                .strategy(Linear::new().extrapolate(true))
+                .build()
+                .unwrap()
+                .interp_array(&alpha_new)
+                .unwrap()
+            };
+
+
         let data = stack(Axis(1), &*data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
 
         let lut = Interp2D::builder(data)
-            .x(alpha)
+            .x(alpha_new)
             .y(Array::from(re))
             .strategy(Biliniar)
             .build()?;
@@ -180,7 +180,7 @@ impl AerofoilBuilder {
         for data in self.data.iter_mut(){
             let zero_idx = data.index_axis(Axis(0), 0).get_lower_index(0.0);
             let mut stall_idx = None;
-            let mut last_cl = data[(1,zero_idx)];
+            let mut last_cl = data[(zero_idx,1)];
             for (idx, mut datapoint) in data.slice_axis_mut(Axis(0), Slice::new((zero_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)).enumerate() {
                 if last_cl > datapoint.cl() {
                     stall_idx = Some(idx + zero_idx);
@@ -191,10 +191,22 @@ impl AerofoilBuilder {
             }
             let stall_idx = stall_idx.unwrap_or_else(||panic!("stall point not found!"));
             let stall = data.index_axis(Axis(0), stall_idx).into_owned();
+
+            // above the stall point we calculate the data for each degree up to 90
+            let new_len = stall_idx + 90 + 1 - stall[0].floor() as usize;
+            let mut new_data = Array::zeros((new_len, 3));
+            new_data.slice_axis_mut(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)).assign(&data.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)));
+            new_data.slice_mut(s![(stall_idx+1).., 0]).assign(&Array::linspace(stall[0].ceil(), 90.0, new_len - stall_idx - 1));
+            *data = new_data;
+
             for mut datapoint in data.slice_axis_mut(Axis(0), Slice::new((stall_idx+1) as isize, None, 1)).axis_iter_mut(Axis(0)) {
                 datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
             }
-            todo!("negative alpha")
+            
+            if self.symmetric {
+                continue;
+            }
+            todo!("updating the AR for asymmetric profiles is not yet implemented");
         }
     }
 }
@@ -223,6 +235,17 @@ impl From<ndarray_interp::BuilderError> for AerofoilBuildError {
 }
 
 
+macro_rules! dsin {
+    ($f:expr) => {
+        $f.to_radians().sin()
+    };
+}
+macro_rules! dcos {
+    ($f:expr) => {
+        $f.to_radians().cos()
+    };
+}
+
 trait DataPoint{
     fn a(&self) -> f64;
     fn cl(&self) -> f64;
@@ -246,15 +269,15 @@ impl<'a> DataPoint for ArrayViewMut1<'a, f64>{
 
     fn lanchester_prandtl(&mut self, aspect_ratio: f64){
         self[2] = self.cd() + self.cl().powi(2) /(PI * aspect_ratio);
-        self[0] = self.a() + self.cl() / (PI * aspect_ratio);
+        self[0] = (self.a().to_radians() + self.cl() / (PI * aspect_ratio)).to_degrees();
     }
 
     fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
         let cd_max = if aspect_ratio > 50.0 {2.01} else {1.1+0.018*aspect_ratio};
-        let kd = (stall.cd() - cd_max * stall.a().sin().powi(2))/stall.a().cos();
-        let kl = (stall.cl() - cd_max * stall.a().sin() * stall.a().cos()) * stall.a().sin() / stall.a().cos().powi(2);
-        self[1] = cd_max/2.0* (2.0*self.a()).sin() + kl * self.a().cos().powi(2)/self.a().sin();
-        self[2] = cd_max * self.a().sin().powi(2) + kd * self.a().cos();
+        let kd = (stall.cd() - cd_max * dsin!(stall.a()).powi(2))/dcos!(stall.a());
+        let kl = (stall.cl() - cd_max * dsin!(stall.a()) * dcos!(stall.a())) * dsin!(stall.a()) / dcos!(stall.a()).powi(2);
+        self[1] = cd_max/2.0* dsin!(2.0*self.a()) + kl * dcos!(self.a()).powi(2)/dsin!(self.a());
+        self[2] = cd_max * dsin!(self.a()).powi(2) + kd * dcos!(self.a());
     }
 }
 
