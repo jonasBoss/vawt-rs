@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use ndarray::{s, stack, Array, Array2, ArrayView1, ArrayViewMut1, Axis, Slice};
+use ndarray::{s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis, Slice};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec},
@@ -10,12 +10,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 /// Coefficient of lift and drag
-pub struct ClCd([f64; 2]);
-impl AsRef<[f64; 2]> for ClCd {
-    fn as_ref(&self) -> &[f64; 2] {
-        &self.0
-    }
-}
+pub struct ClCd(pub Array1<f64>);
 
 /// An Aerofoil implemented using a LUT.
 #[derive(Debug)]
@@ -39,12 +34,12 @@ impl Aerofoil {
     /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number and angle of attack
     pub fn cl_cd(&self, alpha: f64, re: f64) -> ClCd {
         if self.symmetric {
-            let sign = alpha / alpha.abs();
-            let clcd = self.lut.interp(alpha.abs(), re).unwrap();
-            ClCd([sign * clcd[0], clcd[1]])
+            let mut clcd = self.lut.interp(alpha.abs(), re).unwrap();
+            clcd[0] *= alpha.signum();
+            ClCd(clcd)
         } else {
             let clcd = self.lut.interp(alpha, re).unwrap();
-            ClCd([clcd[0], clcd[1]])
+            ClCd(clcd)
         }
     }
 }
