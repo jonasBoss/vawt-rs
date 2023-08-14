@@ -1,4 +1,6 @@
-use ndarray::Array1;
+use std::ops::{SubAssign, Sub, Add};
+
+use ndarray::{Array1, array};
 
 use crate::{
     areofoil::{Aerofoil, ClCd},
@@ -52,8 +54,9 @@ impl StreamTube {
 
     /// the difference between the wind thrust and the foil force
     /// this needs to be minimized
-    pub fn thrust_error(&self, _a: f64) -> f64 {
-        todo!()
+    pub fn thrust_error(&self, a: f64, operating_point: &TurbineOperatingConditions) -> f64 {
+        let u = operating_point.tsr;
+
     }
 
     /// Thrust coefficient by momentum theory or Glauert empirical formula
@@ -68,11 +71,17 @@ impl StreamTube {
         }
     }
 
-    /// Force coefficient acting on the aerofoil in normal and tangent direction
-    pub fn cn_ct(&self, alpha: f64, re_1: f64, foil: &Aerofoil) -> Array1<f64> {
-        let _cld = foil.cl_cd(alpha, re_1);
-        todo!()
+    /// windspeed at the foil in negative y direction
+    fn c_1(&self, a: f64) -> Velocity {
+        let magnitude = (1.0-2.0*self.a_0) * (1.0-a);
+        Velocity::from_global(0.0, - magnitude)
     }
+
+    /// relative velocity at foil in global xy coordinates
+    fn w(&self, a: f64, operating_point: &TurbineOperatingConditions) -> Velocity{
+        self.c_1(a) - Velocity::from_tangential(0.0, operating_point.tsr, self.θ)
+    }
+
 }
 
 #[derive(Debug)]
@@ -81,6 +90,7 @@ struct StreamTubeSolution {
     a: f64,
 }
 
+/// Normal and Tangent coefficients
 #[derive(Debug)]
 struct CnCt(Array1<f64>);
 
@@ -89,5 +99,39 @@ impl CnCt {
         let ClCd(cl_cd) = cl_cd;
         let cn_ct = rot_mat(alpha + beta).dot(cl_cd);
         Self(cn_ct)
+    }
+}
+
+/// A velocity in global coordinates
+#[derive(Debug)]
+struct Velocity(Array1<f64>);
+
+impl Velocity {
+    pub fn from_global(x: f64, y: f64) -> Self {
+        Self(array![x,y])
+    }
+
+    pub fn from_tangential(x: f64, y: f64, theta: f64) -> Self {
+        Velocity(rot_mat(theta).dot(&array![x,y]))
+    }
+}
+
+impl Sub for Velocity {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let Velocity(lhs) = self;
+        let Velocity(rhs) = rhs;
+        Velocity(lhs - rhs)
+    }
+}
+
+impl Add for Velocity {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let Velocity(lhs) = self;
+        let Velocity(rhs) = rhs;
+        Velocity(lhs + rhs)
     }
 }
