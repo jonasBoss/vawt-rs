@@ -1,4 +1,4 @@
-use std::{fs::File};
+use std::fs::File;
 
 use csv::ReaderBuilder;
 use ndarray::{array, Array2};
@@ -8,7 +8,7 @@ mod areofoil;
 mod streamtube;
 mod turbine;
 
-use crate::{areofoil::*};
+use crate::areofoil::*;
 
 fn main() {
     let files = Vec::from([
