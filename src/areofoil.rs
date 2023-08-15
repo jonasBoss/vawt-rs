@@ -15,6 +15,10 @@ use crate::rot_mat;
 pub struct ClCd(pub Array1<f64>);
 
 impl ClCd {
+    /// convert lift and drag coeffitients to normal and tangential coefficients
+    /// 
+    /// # returns
+    /// `(c_n: f64, c_t: f64)`
     pub fn to_tangential(&self, alpha: f64, beta:f64) -> (f64, f64) {
         let ClCd(rhs) = self;
         let target = rot_mat(alpha + beta).dot(rhs);

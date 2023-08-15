@@ -24,25 +24,8 @@ impl StreamTube {
         Self { a_0, theta, beta }
     }
 
-    /// calculate streamtube solution for the given tipspeed ratio
-    pub fn solve(
-        &self,
-        turbine: &Turbine,
-    ) -> StreamTubeSolution {
-        let a = self.calculate_a(turbine, 0.01);
-
-        // reference windspeed
-        let c_0 = 1.0 - 2.0 * self.a_0;
-        // windspeed at wing
-        let _c_1 = c_0 * (1.0 - a);
-        // tangential wing velocity
-        let _u = turbine.tsr;
-
-        todo!()
-    }
-
-    /// calculate the induction factor for the stramtube
-    pub fn calculate_a(&self, turbine: &Turbine, epsilon: f64) -> f64 {
+    /// solve the streamtube for induction factor a
+    pub fn solve_a(&self, turbine: &Turbine, epsilon: f64) -> f64 {
         let mut a_range = (-2.0, 2.0);
         let mut err_range = (0.0,0.0);
         err_range.0 = self.thrust_error(a_range.0, turbine);
@@ -68,6 +51,42 @@ impl StreamTube {
         a_range.0 + (a_range.1 - a_range.0) / 2.0
     }
 
+    /// the difference between the wind thrust and the foil force
+    /// for a given induction factor a
+    /// 
+    /// for good solutions this should be small
+    pub fn thrust_error(&self, a: f64, turbine: &Turbine) -> f64 {
+        let foil_force = self.foil_thrust(a, turbine);
+        let wind_force = StreamTube::wind_thrust(a);
+
+        foil_force - wind_force
+    }
+
+    /// the relative velocity magnitude `w`, the angle of attack `alpha` and the 
+    /// local reynolds number `re` at the foil for a given induction factor a
+    /// 
+    /// # returns
+    /// `(w: f64, alpha: f64, re: f64)`
+    pub fn w_alpha_re(&self, a: f64, turbine: &Turbine) -> (f64, f64, f64) {
+        let w = self.w(a, turbine);
+        let (w_x_floil, w_y_foil) = w.to_foil(self.theta, self.beta);
+        
+        let alpha = w_y_foil.atan2(w_x_floil) + PI / 2.0;
+        let w = w.magnitude();
+        let re = turbine.re * w;
+        (w, alpha, re)
+    }
+
+    /// tangential foil coefficient and tangential force coeffitient
+    /// 
+    /// # returns
+    /// (c_tan: f64, cf_tan: f64)
+    pub fn c_tan_cf_tan(&self, a: f64, turbine: &Turbine) -> (f64, f64) {
+        let (w, alpha, re) = self.w_alpha_re(a, turbine);
+        let (_, ct) = turbine.foil.cl_cd(alpha, re).to_tangential(alpha, self.beta);
+        (ct, ct * self.force_normalization(w, turbine))
+    }
+
     fn a_strickland(&self, turbine: &Turbine) -> f64 {
         let mut a = 0.0;
         for _ in 0..10 {
@@ -82,34 +101,24 @@ impl StreamTube {
         a
     }
 
-    /// the difference between the wind thrust and the foil force
-    /// this needs to be minimized
-    pub fn thrust_error(&self, a: f64, turbine: &Turbine) -> f64 {
-        let foil_force = self.foil_thrust(a, turbine);
-        let wind_force = StreamTube::wind_thrust(a);
-
-        foil_force - wind_force
-    }
-
     fn foil_thrust(&self, a: f64, turbine: &Turbine) -> f64 {
-        let w = self.w(a, turbine);
-        let (w_x_floil, w_y_foil) = w.to_foil(self.theta, self.beta);
-        let w = w.magnitude();
-        
-        let alpha = w_y_foil.atan2(w_x_floil) + PI / 2.0;
-        let re = turbine.re * w;
+        let (w, alpha, re) =  self.w_alpha_re(a, turbine);
 
         let cl_cd = turbine.foil.cl_cd(alpha, re);
         let (_, force_coeff) = cl_cd.to_global(alpha, self.beta, self.theta);
 
-        - force_coeff * (w / self.c_0().magnitude()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs())
+        - force_coeff * self.force_normalization(w, turbine)
+    }
+
+    fn force_normalization(&self, w: f64, turbine: &Turbine) -> f64 {
+        (w / self.c_0().magnitude()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs())
     }
 
     /// Thrust coefficient by momentum theory or Glauert empirical formula
     ///
     /// A crude straight line approximation for Glauert formula is used
     /// between 0.4 < a < 1.0,  0.96 < CtubeThru < 2.0
-    pub fn wind_thrust(a: f64) -> f64 {
+    fn wind_thrust(a: f64) -> f64 {
         if a < 0.4 {
             4.0 * a * (1.0 - a)
         } else {
@@ -139,18 +148,6 @@ impl StreamTube {
 struct StreamTubeSolution {
     /// Induction factor of the streamtube
     a: f64,
-}
-
-/// Normal and Tangent coefficients
-#[derive(Debug)]
-struct CnCt(Array1<f64>);
-
-impl CnCt {
-    pub fn from_clcd(cl_cd: &ClCd, alpha: f64, beta: f64) -> Self {
-        let ClCd(cl_cd) = cl_cd;
-        let cn_ct = rot_mat(alpha + beta).dot(cl_cd);
-        Self(cn_ct)
-    }
 }
 
 /// A velocity in global coordinates
