@@ -29,7 +29,7 @@ impl StreamTube {
         &self,
         turbine: &Turbine,
     ) -> StreamTubeSolution {
-        let a = self.calculate_a(turbine.tsr, 0.01);
+        let a = self.calculate_a(turbine, 0.01);
 
         // reference windspeed
         let c_0 = 1.0 - 2.0 * self.a_0;
@@ -42,18 +42,56 @@ impl StreamTube {
     }
 
     /// calculate the induction factor for the stramtube
-    pub fn calculate_a(&self, _tsr: f64, epsilon: f64) -> f64 {
-        let a_range = (-2.0, 2.0);
-        while (a_range.1 - a_range.0) > epsilon {
-            todo!()
+    pub fn calculate_a(&self, turbine: &Turbine, epsilon: f64) -> f64 {
+        let mut a_range = (-2.0, 2.0);
+        let mut err_range = (0.0,0.0);
+        err_range.0 = self.thrust_error(a_range.0, turbine);
+        err_range.1 = self.thrust_error(a_range.1, turbine);
+        if err_range.0 * err_range.1 > 0.0 {
+            println!("strickland iteration");
+            return self.a_strickland(turbine);
+        }
+        while(a_range.1 - a_range.0) > epsilon {
+            let a = (a_range.1 - a_range.0) / 0.0;
+            let err = self.thrust_error(a, turbine);
+
+            if err_range.0 * err <= 0.0 {
+                a_range.1 = a;
+                err_range.1 = err;
+            } else {
+                a_range.0 = a;
+                err_range.0 = err;
+            }
+            
         }
 
         a_range.0 + (a_range.1 - a_range.0) / 2.0
     }
 
+    fn a_strickland(&self, turbine: &Turbine) -> f64 {
+        let mut a = 0.0;
+        for _ in 0..10 {
+            let c_s = self.foil_thrust(a, turbine);
+            let a_new = 0.25*c_s + a.powi(2);
+            if a_new < 1.0 {
+                a = a_new;
+            }else {
+                a = 1.0;
+            }
+        }
+        a
+    }
+
     /// the difference between the wind thrust and the foil force
     /// this needs to be minimized
     pub fn thrust_error(&self, a: f64, turbine: &Turbine) -> f64 {
+        let foil_force = self.foil_thrust(a, turbine);
+        let wind_force = StreamTube::wind_thrust(a);
+
+        foil_force - wind_force
+    }
+
+    fn foil_thrust(&self, a: f64, turbine: &Turbine) -> f64 {
         let w = self.w(a, turbine);
         let (w_x_floil, w_y_foil) = w.to_foil(self.theta, self.beta);
         let w = w.magnitude();
@@ -64,10 +102,7 @@ impl StreamTube {
         let cl_cd = turbine.foil.cl_cd(alpha, re);
         let (_, force_coeff) = cl_cd.to_global(alpha, self.beta, self.theta);
 
-        let foil_force = - force_coeff * (w / self.c_0().magnitude()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs());
-        let wind_force = StreamTube::wind_thrust(a);
-
-        foil_force - wind_force
+        - force_coeff * (w / self.c_0().magnitude()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs())
     }
 
     /// Thrust coefficient by momentum theory or Glauert empirical formula
