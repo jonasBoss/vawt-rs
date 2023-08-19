@@ -1,14 +1,10 @@
 use std::fs::File;
 
 use csv::ReaderBuilder;
-use ndarray::{array, Array2};
+use ndarray::{array, Array2, Axis};
 use ndarray_csv::Array2Reader;
 
-mod areofoil;
-mod streamtube;
-mod turbine;
-
-use crate::areofoil::*;
+use vawt::areofoil::Aerofoil;
 
 fn main() {
     let files = Vec::from([
@@ -40,10 +36,10 @@ fn read_array(path: &str) -> Array2<f64> {
         .delimiter(b',')
         .from_reader(file);
 
-    reader.deserialize_array2_dynamic().unwrap()
+    let mut arr: Array2<f64> = reader.deserialize_array2_dynamic().unwrap();
+    for mut datapoint in arr.axis_iter_mut(Axis(0)) {
+        datapoint[0] = datapoint[0].to_radians();
+    }
+    arr
 }
 
-/// 2d rotation matrix for angle phi (in radians)
-fn rot_mat(phi: f64) -> Array2<f64> {
-    array![[phi.cos(), -phi.sin()], [phi.sin(), phi.cos()],]
-}

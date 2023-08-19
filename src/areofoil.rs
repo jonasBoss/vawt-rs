@@ -51,7 +51,8 @@ impl Aerofoil {
         }
     }
 
-    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number and angle of attack
+    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number 
+    /// and angle of attack in radians
     pub fn cl_cd(&self, alpha: f64, re: f64) -> ClCd {
         if self.symmetric {
             let mut clcd = self.lut.interp(alpha.abs(), re).unwrap();
@@ -67,10 +68,16 @@ impl Aerofoil {
 #[derive(Debug)]
 pub struct AerofoilBuilder {
     /// data rows for [alpha, cl, cd] over Re
+    /// where alpha is given in radians
     data: Vec<Array2<f64>>,
+    /// reynolds number corresponding to each data row
     re: Vec<f64>,
+    /// is the data for a symmetric profile?
     symmetric: bool,
+    /// the aspect ratio of the aerofoil
     aspect_ratio: f64,
+    /// is the data given for infinite wings and needs do be 
+    /// convertet according to the aspect ratio
     update_aspect_ratio: bool,
 }
 
@@ -85,8 +92,9 @@ impl AerofoilBuilder {
         }
     }
 
-    /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`
-    /// the data must be strict monotonic rising over alpha, and the reynolds number must be new
+    /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`, 
+    /// where alpha is given in radians.
+    /// The data must be strict monotonic rising over alpha, and the reynolds number has to be uniqe
     pub fn add_data_row(
         &mut self,
         data: Array2<f64>,
@@ -239,8 +247,8 @@ impl AerofoilBuilder {
             new_data
                 .slice_mut(s![(stall_idx + 1).., 0])
                 .assign(&Array::linspace(
-                    stall[0].ceil(),
-                    90.0,
+                    stall[0].to_degrees().ceil().to_radians(),
+                    PI / 2.0,
                     new_len - stall_idx - 1,
                 ));
             *data_row = new_data;
@@ -283,17 +291,6 @@ impl From<ndarray_interp::BuilderError> for AerofoilBuildError {
     }
 }
 
-macro_rules! dsin {
-    ($f:expr) => {
-        $f.to_radians().sin()
-    };
-}
-macro_rules! dcos {
-    ($f:expr) => {
-        $f.to_radians().cos()
-    };
-}
-
 trait DataPoint {
     fn a(&self) -> f64;
     fn cl(&self) -> f64;
@@ -326,12 +323,12 @@ impl<'a> DataPoint for ArrayViewMut1<'a, f64> {
         } else {
             1.1 + 0.018 * aspect_ratio
         };
-        let kd = (stall.cd() - cd_max * dsin!(stall.a()).powi(2)) / dcos!(stall.a());
-        let kl = (stall.cl() - cd_max * dsin!(stall.a()) * dcos!(stall.a())) * dsin!(stall.a())
-            / dcos!(stall.a()).powi(2);
+        let kd = (stall.cd() - cd_max * stall.a().sin().powi(2)) / stall.a().cos();
+        let kl = (stall.cl() - cd_max * stall.a().sin() * stall.a()).cos() * stall.a().sin()
+            / stall.a().cos().powi(2);
         self[1] =
-            cd_max / 2.0 * dsin!(2.0 * self.a()) + kl * dcos!(self.a()).powi(2) / dsin!(self.a());
-        self[2] = cd_max * dsin!(self.a()).powi(2) + kd * dcos!(self.a());
+            cd_max / 2.0 * (2.0 * self.a()).sin() + kl * self.a().cos().powi(2) / self.a().sin();
+        self[2] = cd_max * self.a().sin().powi(2) + kd * self.a().cos();
     }
 }
 
