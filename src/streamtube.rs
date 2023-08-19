@@ -12,7 +12,7 @@ struct StreamTube {
     /// Induction factor of the upwind streamtube.
     /// For upwind steamtubes (θ < π) this should be 0
     a_0: f64,
-    /// Steamtube position in radians 
+    /// Steamtube position in radians
     theta: f64,
     /// Pitch angle of the foil relative to the turbine tangent
     beta: f64,
@@ -60,7 +60,7 @@ impl StreamTube {
         foil_force - wind_force
     }
 
-    /// the relative velocity magnitude `w`, the angle of attack `alpha` in radians 
+    /// the relative velocity magnitude `w`, the angle of attack `alpha` in radians
     /// and the local reynolds number `re` at the foil for a given induction factor a
     ///
     /// # returns

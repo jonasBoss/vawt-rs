@@ -51,7 +51,7 @@ impl Aerofoil {
         }
     }
 
-    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number 
+    /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number
     /// and angle of attack in radians
     pub fn cl_cd(&self, alpha: f64, re: f64) -> ClCd {
         if self.symmetric {
@@ -76,7 +76,7 @@ pub struct AerofoilBuilder {
     symmetric: bool,
     /// the aspect ratio of the aerofoil
     aspect_ratio: f64,
-    /// is the data given for infinite wings and needs do be 
+    /// is the data given for infinite wings and needs do be
     /// convertet according to the aspect ratio
     update_aspect_ratio: bool,
 }
@@ -92,7 +92,7 @@ impl AerofoilBuilder {
         }
     }
 
-    /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`, 
+    /// add profile data as an 2-d array of `[[alpha_1, cl_1, cd_1], [alpha_2, cl_2, cd_2], ..]`,
     /// where alpha is given in radians.
     /// The data must be strict monotonic rising over alpha, and the reynolds number has to be uniqe
     pub fn add_data_row(
@@ -122,7 +122,7 @@ impl AerofoilBuilder {
     }
 
     /// When this is set, only data for positive angles of attack need to be provided.
-    pub fn symmetric(mut self, yes: bool) -> Self {
+    pub fn symmetric(&mut self, yes: bool) -> &mut Self {
         self.symmetric = yes;
         self
     }
@@ -134,7 +134,7 @@ impl AerofoilBuilder {
     ///
     /// # Note
     /// This is currently only for symmetric profiles implemented.
-    pub fn update_aspect_ratio(mut self, yes: bool) -> Self {
+    pub fn update_aspect_ratio(&mut self, yes: bool) -> &mut Self {
         self.update_aspect_ratio = yes;
         self
     }
@@ -143,27 +143,24 @@ impl AerofoilBuilder {
     ///
     /// When the data does not reflect this aspect ratio,
     /// but instead is profile data for an infinte aspect ratio set [`update_aspect_ratio`]
-    pub fn set_aspect_ratio(mut self, ar: f64) -> Self {
+    pub fn set_aspect_ratio(&mut self, ar: f64) -> &mut Self {
         self.aspect_ratio = ar;
         self
     }
 
-    pub fn build(mut self) -> Result<Aerofoil, AerofoilBuildError> {
+    pub fn build(&mut self) -> Result<Aerofoil, AerofoilBuildError> {
         if self.update_aspect_ratio {
             self.change_ar()
         }
 
-        let AerofoilBuilder {
-            data,
-            re,
-            symmetric,
-            ..
-        } = self;
-
         // the order of re is not guaranteed, sort it accoridngly
-        let mut data = re.into_iter().zip(data).collect::<Vec<_>>();
-        data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let (re, mut data) = data.into_iter().fold(
+        let mut zip_data = self
+            .re
+            .drain(..)
+            .zip(self.data.drain(..))
+            .collect::<Vec<_>>();
+        zip_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        (self.re, self.data) = zip_data.into_iter().fold(
             (Vec::new(), Vec::new()),
             |(mut re_acc, mut d_acc), (re, d)| {
                 re_acc.push(re);
@@ -173,47 +170,53 @@ impl AerofoilBuilder {
         );
 
         // the alpha values for the datarows may not agree, so we need create a new alpha axis which contains all unique values
-        let mut alpha_new: Vec<f64> = data
+        let mut resampled_alpha: Vec<f64> = self
+            .data
             .iter()
             .flat_map(|arr| arr.slice(s![.., 0]).into_iter().copied())
             .collect();
-        alpha_new.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let alpha_new = Array::from_iter(alpha_new.into_iter().fold(Vec::new(), |mut acc, f| {
-            match acc.last() {
-                None => acc.push(f),
-                Some(&last) => {
-                    if last != f {
-                        acc.push(f)
-                    }
-                }
-            };
-            acc
-        }));
+        resampled_alpha.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        resampled_alpha.dedup_by(|a, b| approx::abs_diff_eq!(a, b, epsilon = f64::EPSILON));
+        let resampled_alpha = Array::from(resampled_alpha);
+
         // resample the data rows with the new alpha axis by interpolating linearly. Also drop the old alpha row from each datarow
-        for data_row in data.iter_mut() {
-            let clcd = data_row.slice(s![.., 1..]);
-            let alpha = data_row.index_axis(Axis(1), 0);
-            *data_row = Interp1D::builder(clcd)
-                .x(alpha)
-                .strategy(Linear::new().extrapolate(true))
-                .build()
-                .unwrap()
-                .interp_array(&alpha_new)
-                .unwrap()
-        }
+        let resampled_data: Vec<_> = self
+            .data
+            .iter()
+            .map(|data_row| {
+                let clcd = data_row.slice(s![.., 1..]);
+                let alpha = data_row.index_axis(Axis(1), 0);
+                Interp1D::builder(clcd)
+                    .x(alpha)
+                    .strategy(Linear::new().extrapolate(true))
+                    .build()
+                    .unwrap()
+                    .interp_array(&resampled_alpha)
+                    .unwrap()
+            })
+            .collect();
 
         // stack the datarows into a 3d array with alpha as the first axis, re as the second and [cl, cd] as the third
-        let data = stack(Axis(1), &data.iter().map(|a| a.view()).collect::<Vec<_>>()).unwrap();
+        let data = stack(
+            Axis(1),
+            &resampled_data.iter().map(|a| a.view()).collect::<Vec<_>>(),
+        )
+        .unwrap();
 
         let lut = Interp2D::builder(data)
-            .x(alpha_new)
-            .y(Array::from(re))
+            .x(resampled_alpha)
+            .y(Array::from(self.re.clone()))
             .strategy(Biliniar)
             .build()?;
-        Ok(Aerofoil::new(lut, symmetric))
+        Ok(Aerofoil::new(lut, self.symmetric))
     }
 
     fn change_ar(&mut self) {
+        if !self.update_aspect_ratio {
+            return;
+        }
+        self.update_aspect_ratio(false);
+
         if self.aspect_ratio >= 98.0 {
             return;
         }

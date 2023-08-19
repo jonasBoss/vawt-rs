@@ -42,4 +42,3 @@ fn read_array(path: &str) -> Array2<f64> {
     }
     arr
 }
-
