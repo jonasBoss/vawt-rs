@@ -30,6 +30,14 @@ impl ClCd {
         let target = rot_mat(alpha + beta + theta).dot(rhs);
         (target[0], target[1])
     }
+
+    pub fn cl(&self) -> f64 {
+        self.0[0]
+    }
+
+    pub fn cd(&self) -> f64 {
+        self.0[1]
+    }
 }
 
 /// An Aerofoil implemented using a LUT.
@@ -240,13 +248,11 @@ impl AerofoilBuilder {
             let stall = data_row.index_axis(Axis(0), stall_idx).into_owned();
 
             // above the stall point we calculate the data for each degree up to 90
-            let new_len = stall_idx + 90 + 1 - stall[0].floor() as usize;
+            let new_len = stall_idx + 90 + 1 - stall[0].to_degrees().floor() as usize;
             let mut new_data = Array::zeros((new_len, 3));
             new_data
-                .slice_axis_mut(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1))
-                .assign(
-                    &data_row.slice_axis(Axis(0), Slice::new(0, Some(stall_idx as isize + 1), 1)),
-                );
+                .slice_mut(s![..(stall_idx + 1), ..])
+                .assign(&data_row.slice(s![..(stall_idx + 1), ..]));
             new_data
                 .slice_mut(s![(stall_idx + 1).., 0])
                 .assign(&Array::linspace(
@@ -257,7 +263,7 @@ impl AerofoilBuilder {
             *data_row = new_data;
 
             for mut datapoint in data_row
-                .slice_axis_mut(Axis(0), Slice::new((stall_idx + 1) as isize, None, 1))
+                .slice_mut(s![(stall_idx + 1).., ..])
                 .axis_iter_mut(Axis(0))
             {
                 datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
@@ -317,7 +323,7 @@ impl<'a> DataPoint for ArrayViewMut1<'a, f64> {
 
     fn lanchester_prandtl(&mut self, aspect_ratio: f64) {
         self[2] = self.cd() + self.cl().powi(2) / (PI * aspect_ratio);
-        self[0] = (self.a().to_radians() + self.cl() / (PI * aspect_ratio)).to_degrees();
+        self[0] = self.a() + self.cl() / (PI * aspect_ratio);
     }
 
     fn viterna_corrigan(&mut self, stall: ArrayView1<f64>, aspect_ratio: f64) {
@@ -327,7 +333,7 @@ impl<'a> DataPoint for ArrayViewMut1<'a, f64> {
             1.1 + 0.018 * aspect_ratio
         };
         let kd = (stall.cd() - cd_max * stall.a().sin().powi(2)) / stall.a().cos();
-        let kl = (stall.cl() - cd_max * stall.a().sin() * stall.a()).cos() * stall.a().sin()
+        let kl = (stall.cl() - cd_max * stall.a().sin() * stall.a().cos()) * stall.a().sin()
             / stall.a().cos().powi(2);
         self[1] =
             cd_max / 2.0 * (2.0 * self.a()).sin() + kl * self.a().cos().powi(2) / self.a().sin();
