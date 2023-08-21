@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 approx = "0.5.1"
 csv = "1.2.2"
+itertools = "0.11.0"
 ndarray = "0.15.6"
 ndarray-csv = "0.5.2"
 ndarray-interp = {path = "../ndarray-interp"}

@@ -1,6 +1,7 @@
 use std::f64::consts::PI;
 
-use ndarray::{s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis, Slice};
+use itertools::Itertools;
+use ndarray::{s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec},
@@ -156,30 +157,23 @@ impl AerofoilBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Result<Aerofoil, AerofoilBuildError> {
-        if self.update_aspect_ratio {
-            self.change_ar()
-        }
+    pub fn build(&self) -> Result<Aerofoil, AerofoilBuildError> {
+        let data = if self.update_aspect_ratio {
+            self.transformed_data_rows()
+        } else {
+            self.data.clone()
+        };
 
         // the order of re is not guaranteed, sort it accoridngly
-        let mut zip_data = self
-            .re
-            .drain(..)
-            .zip(self.data.drain(..))
-            .collect::<Vec<_>>();
-        zip_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        (self.re, self.data) = zip_data.into_iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut re_acc, mut d_acc), (re, d)| {
-                re_acc.push(re);
-                d_acc.push(d);
-                (re_acc, d_acc)
-            },
-        );
+        let (re, data): (Vec<_>, Vec<_>) = self.re
+            .iter()
+            .copied()
+            .zip(data)
+            .sorted_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+            .unzip();
 
         // the alpha values for the datarows may not agree, so we need create a new alpha axis which contains all unique values
-        let mut resampled_alpha: Vec<f64> = self
-            .data
+        let mut resampled_alpha: Vec<f64> = data
             .iter()
             .flat_map(|arr| arr.slice(s![.., 0]).into_iter().copied())
             .collect();
@@ -188,8 +182,7 @@ impl AerofoilBuilder {
         let resampled_alpha = Array::from(resampled_alpha);
 
         // resample the data rows with the new alpha axis by interpolating linearly. Also drop the old alpha row from each datarow
-        let resampled_data: Vec<_> = self
-            .data
+        let resampled_data: Vec<_> = data
             .iter()
             .map(|data_row| {
                 let clcd = data_row.slice(s![.., 1..]);
@@ -213,67 +206,73 @@ impl AerofoilBuilder {
 
         let lut = Interp2D::builder(data)
             .x(resampled_alpha)
-            .y(Array::from(self.re.clone()))
+            .y(Array::from(re))
             .strategy(Biliniar)
             .build()?;
         Ok(Aerofoil::new(lut, self.symmetric))
     }
 
-    fn change_ar(&mut self) {
+    fn transformed_data_rows(&self) -> Vec<Array2<f64>> {
         if !self.update_aspect_ratio {
-            return;
+            return self.data.clone();
         }
-        self.update_aspect_ratio(false);
 
         if self.aspect_ratio >= 98.0 {
-            return;
+            return self.data.clone();
         }
-        for data_row in self.data.iter_mut() {
-            let zero_idx = data_row.index_axis(Axis(0), 0).get_lower_index(0.0);
-            let mut stall_idx = None;
-            let mut last_cl = data_row[(zero_idx, 1)];
-            for (idx, mut datapoint) in data_row
-                .slice_axis_mut(Axis(0), Slice::new((zero_idx + 1) as isize, None, 1))
-                .axis_iter_mut(Axis(0))
-                .enumerate()
-            {
-                if last_cl > datapoint.cl() {
-                    stall_idx = Some(idx + zero_idx);
-                    break; // cl has dropped (stall)
-                }
-                last_cl = datapoint.cl();
-                datapoint.lanchester_prandtl(self.aspect_ratio);
-            }
-            let stall_idx = stall_idx.unwrap_or_else(|| panic!("stall point not found!"));
-            let stall = data_row.index_axis(Axis(0), stall_idx).into_owned();
 
-            // above the stall point we calculate the data for each degree up to 90
-            let new_len = stall_idx + 90 + 1 - stall[0].to_degrees().floor() as usize;
-            let mut new_data = Array::zeros((new_len, 3));
-            new_data
-                .slice_mut(s![..(stall_idx + 1), ..])
-                .assign(&data_row.slice(s![..(stall_idx + 1), ..]));
-            new_data
-                .slice_mut(s![(stall_idx + 1).., 0])
-                .assign(&Array::linspace(
-                    stall[0].to_degrees().ceil().to_radians(),
-                    PI / 2.0,
-                    new_len - stall_idx - 1,
-                ));
-            *data_row = new_data;
+        self.data
+            .iter()
+            .cloned()
+            .map(|data_row| self.transform_row(data_row))
+            .collect()
+    }
 
-            for mut datapoint in data_row
-                .slice_mut(s![(stall_idx + 1).., ..])
-                .axis_iter_mut(Axis(0))
-            {
-                datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
+    fn transform_row(&self, mut data_row: Array2<f64>) -> Array2<f64> {
+        let zero_idx = data_row.index_axis(Axis(0), 0).get_lower_index(0.0);
+        let mut stall_idx = None;
+        let mut last_cl = data_row[(zero_idx, 1)];
+        for (idx, mut datapoint) in data_row
+            .slice_mut(s![(zero_idx + 1).., ..])
+            .axis_iter_mut(Axis(0))
+            .enumerate()
+        {
+            if last_cl > datapoint.cl() {
+                stall_idx = Some(idx + zero_idx);
+                break; // cl has dropped (stall)
             }
-
-            if self.symmetric {
-                continue;
-            }
-            todo!("updating the AR for asymmetric profiles is not yet implemented");
+            last_cl = datapoint.cl();
+            datapoint.lanchester_prandtl(self.aspect_ratio);
         }
+        let stall_idx = stall_idx.unwrap_or_else(|| panic!("stall point not found!"));
+        let stall = data_row.index_axis(Axis(0), stall_idx).into_owned();
+
+        // above the stall point we calculate the data for each degree up to 90
+        let new_len = stall_idx + 90 + 1 - stall[0].to_degrees().floor() as usize;
+        let mut new_data = Array::zeros((new_len, 3));
+        new_data
+            .slice_mut(s![..(stall_idx + 1), ..])
+            .assign(&data_row.slice(s![..(stall_idx + 1), ..]));
+        new_data
+            .slice_mut(s![(stall_idx + 1).., 0])
+            .assign(&Array::linspace(
+                stall[0].to_degrees().ceil().to_radians(),
+                PI / 2.0,
+                new_len - stall_idx - 1,
+            ));
+        data_row = new_data;
+
+        for mut datapoint in data_row
+            .slice_mut(s![(stall_idx + 1).., ..])
+            .axis_iter_mut(Axis(0))
+        {
+            datapoint.viterna_corrigan(stall.view(), self.aspect_ratio);
+        }
+
+        if self.symmetric {
+            return data_row;
+        }
+        todo!("updating the AR for asymmetric profiles is not yet implemented");
     }
 }
 
