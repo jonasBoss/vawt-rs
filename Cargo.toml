@@ -12,4 +12,4 @@ itertools = "0.11.0"
 ndarray = "0.15.6"
 ndarray-csv = "0.5.2"
 ndarray-interp = {path = "../ndarray-interp"}
-thiserror = "1.0.44"
+thiserror = "1.0"

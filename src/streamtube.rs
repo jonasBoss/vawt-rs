@@ -8,7 +8,7 @@ use ndarray::{array, Array1};
 use crate::{rot_mat, turbine::Turbine};
 
 #[derive(Debug)]
-struct StreamTube {
+pub struct StreamTube {
     /// Induction factor of the upwind streamtube.
     /// For upwind steamtubes (θ < π) this should be 0
     a_0: f64,
@@ -19,6 +19,9 @@ struct StreamTube {
 }
 
 impl StreamTube {
+    /// create a new streamtube at the turbine position `theta` (in radians)
+    /// with the pitch angle `beta` (in radians) and an upstream induction 
+    /// factor `a_0`. For upstream streamtubes this is likely `0.0`
     pub fn new(theta: f64, beta: f64, a_0: f64) -> Self {
         Self { a_0, theta, beta }
     }
@@ -34,7 +37,7 @@ impl StreamTube {
             return self.a_strickland(turbine);
         }
         while (a_range.1 - a_range.0) > epsilon {
-            let a = (a_range.1 - a_range.0) / 0.0;
+            let a = a_range.0 + (a_range.1 - a_range.0) / 2.0;
             let err = self.thrust_error(a, turbine);
 
             if err_range.0 * err <= 0.0 {
@@ -82,7 +85,7 @@ impl StreamTube {
     pub fn c_tan_cf_tan(&self, a: f64, turbine: &Turbine) -> (f64, f64) {
         let (w, alpha, re) = self.w_alpha_re(a, turbine);
         let (_, ct) = turbine
-            .foil
+            .aerofoil
             .cl_cd(alpha, re)
             .to_tangential(alpha, self.beta);
         (ct, ct * self.force_normalization(w, turbine))
@@ -105,7 +108,7 @@ impl StreamTube {
     fn foil_thrust(&self, a: f64, turbine: &Turbine) -> f64 {
         let (w, alpha, re) = self.w_alpha_re(a, turbine);
 
-        let cl_cd = turbine.foil.cl_cd(alpha, re);
+        let cl_cd = turbine.aerofoil.cl_cd(alpha, re);
         let (_, force_coeff) = cl_cd.to_global(alpha, self.beta, self.theta);
 
         -force_coeff * self.force_normalization(w, turbine)

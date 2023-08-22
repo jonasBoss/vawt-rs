@@ -1,10 +1,10 @@
 use std::fs::File;
 
 use csv::ReaderBuilder;
-use ndarray::{array, Array2, Axis};
+use ndarray::{array, Array2, Axis, Array, s};
 use ndarray_csv::Array2Reader;
 
-use vawt::areofoil::Aerofoil;
+use vawt::{areofoil::Aerofoil, turbine::VAWTSolver};
 
 fn main() {
     let files = Vec::from([
@@ -25,7 +25,15 @@ fn main() {
         .symmetric(true)
         .build()
         .unwrap();
-    println!("{aerofoil:?}")
+    //println!("{aerofoil:?}")
+
+    let solution = VAWTSolver::new(&aerofoil)
+        .re(40_000.0)
+        .n_streamtubes(30)
+        //.tsr(1.0)
+        .solve_with_beta(0.0);
+
+    println!("{solution:#?}");
 }
 
 fn read_array(path: &str) -> Array2<f64> {

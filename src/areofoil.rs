@@ -207,7 +207,7 @@ impl AerofoilBuilder {
         let lut = Interp2D::builder(data)
             .x(resampled_alpha)
             .y(Array::from(re))
-            .strategy(Biliniar)
+            .strategy(Biliniar::new().extrapolate(true))
             .build()?;
         Ok(Aerofoil::new(lut, self.symmetric))
     }
