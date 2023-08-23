@@ -33,7 +33,6 @@ impl StreamTube {
         err_range.0 = self.thrust_error(a_range.0, turbine);
         err_range.1 = self.thrust_error(a_range.1, turbine);
         if err_range.0 * err_range.1 > 0.0 {
-            println!("strickland iteration");
             return self.a_strickland(turbine);
         }
         while (a_range.1 - a_range.0) > epsilon {

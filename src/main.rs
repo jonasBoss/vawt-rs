@@ -1,10 +1,10 @@
-use std::fs::File;
+use std::{fs::File, f64::consts::PI};
 
 use csv::ReaderBuilder;
 use ndarray::{array, Array2, Axis, Array, s};
 use ndarray_csv::Array2Reader;
 
-use vawt::{areofoil::Aerofoil, turbine::VAWTSolver};
+use vawt::{areofoil::Aerofoil, turbine::{VAWTSolver, Verbosity, Turbine}, streamtube::StreamTube};
 
 fn main() {
     let files = Vec::from([
@@ -27,13 +27,20 @@ fn main() {
         .unwrap();
     //println!("{aerofoil:?}")
 
-    let solution = VAWTSolver::new(&aerofoil)
-        .re(40_000.0)
-        .n_streamtubes(30)
-        //.tsr(1.0)
-        .solve_with_beta(0.0);
+    // let mut solver = VAWTSolver::new(&aerofoil);
 
-    println!("{solution:#?}");
+    // solver.re(31_300.0)
+    //     .solidity(0.3525)
+    //     .n_streamtubes(100)
+    //     .verbosity(Verbosity::Silent);
+    // let solution = solver.solve_with_beta(0.0);
+
+    //println!("{solution:#?}");
+
+    let turbine = Turbine { re: 31_300.0, tsr: 3.0, solidity: 0.3525, aerofoil: &aerofoil };
+    let tube = StreamTube::new(PI * 3.0 / 2.0, 0.0, 0.0);
+    let w_a_re = tube.w_alpha_re(0.0, &turbine);
+    println!("{w_a_re:?}")
 }
 
 fn read_array(path: &str) -> Array2<f64> {
