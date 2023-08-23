@@ -13,3 +13,6 @@ ndarray = "0.15.6"
 ndarray-csv = "0.5.2"
 ndarray-interp = {path = "../ndarray-interp"}
 thiserror = "1.0"
+
+[dev-dependencies]
+ndarray = {version = "0.15", features = ["approx-0_5"] }

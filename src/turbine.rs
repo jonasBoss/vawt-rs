@@ -25,6 +25,7 @@ pub struct  TurbineSolution<'a> {
     beta: Array1<f64>,
     a: Array1<f64>,
     a_0: Array1<f64>,
+    epsilon: f64,
 }
 
 impl<'a> TurbineSolution<'a> {
@@ -78,17 +79,27 @@ impl<'a> TurbineSolution<'a> {
 
     pub fn thrust_error(&self, theta: f64) -> f64 {
         let a = self.a(theta);
-        let a_0 = self.a_0(theta);
-        let beta = self.beta(theta);
-        StreamTube::new(theta, beta, a_0).thrust_error(a, &self.turbine)
+        self.streamtube(theta).thrust_error(a, &self.turbine)
     }
 
     pub fn c_tan(&self, theta: f64) -> f64 {
         let a = self.a(theta);
+        let (ct,_) = self.streamtube(theta).c_tan_cf_tan(a, &self.turbine);
+        ct
+    }
+
+    pub fn epsilon(&self) -> f64 {
+        self.epsilon
+    }
+
+    pub fn w_alpha_re(&self, theta: f64) -> (f64, f64, f64) {
+        self.streamtube(theta).w_alpha_re(self.a(theta), &self.turbine)
+    }
+
+    fn streamtube(&self, theta: f64) -> StreamTube {
         let a_0 = self.a_0(theta);
         let beta = self.beta(theta);
-        let (ct,_) = StreamTube::new(theta, beta, a_0).c_tan_cf_tan(a, &self.turbine);
-        ct
+        StreamTube::new(theta, beta, a_0)
     }
  }
 
@@ -211,7 +222,7 @@ impl<'a> VAWTSolver<'a> {
         
         a_0.slice_mut(slice_down).assign(&a_up);
         let a = concatenate![Axis(0), a_up, a_down];
-        TurbineSolution { turbine: turbine, n_streamtubes, theta, beta, a, a_0 }
+        TurbineSolution { turbine: turbine, n_streamtubes, theta, beta, a, a_0, epsilon }
     }
 
     /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
