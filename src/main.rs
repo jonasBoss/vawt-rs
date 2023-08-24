@@ -1,16 +1,25 @@
-use std::{fs::File, f64::consts::PI, error::Error};
+use std::{error::Error, f64::consts::PI, fs::File};
 
 use csv::ReaderBuilder;
-use ndarray::{array, Array2, Axis, Array, s};
+use ndarray::{array, s, Array, Array2, Axis};
 use ndarray_csv::Array2Reader;
 
-use vawt::{areofoil::Aerofoil, turbine::{VAWTSolver, Verbosity, Turbine}, streamtube::StreamTube};
+use vawt::{areofoil::Aerofoil, streamtube::StreamTube, Turbine, VAWTSolver, Verbosity};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let aerofoil = Aerofoil::builder()
-        .add_data_row(read_array("examples/NACA0018/NACA0018Re0080.data")?, 80_000.0)?
-        .add_data_row(read_array("examples/NACA0018/NACA0018Re0040.data")?, 40_000.0)?
-        .add_data_row(read_array("examples/NACA0018/NACA0018Re0160.data")?, 160_000.0)?
+        .add_data_row(
+            read_array("examples/NACA0018/NACA0018Re0080.data")?,
+            80_000.0,
+        )?
+        .add_data_row(
+            read_array("examples/NACA0018/NACA0018Re0040.data")?,
+            40_000.0,
+        )?
+        .add_data_row(
+            read_array("examples/NACA0018/NACA0018Re0160.data")?,
+            160_000.0,
+        )?
         .set_aspect_ratio(12.8)
         .update_aspect_ratio(true)
         .symmetric(true)
@@ -19,9 +28,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let n = 72;
     let d_t_half = PI / n as f64;
     let theta = Array::linspace(d_t_half, 2.0 * PI - d_t_half, n);
-    
+
     let mut solver = VAWTSolver::new(&aerofoil);
-    solver.re(31_300.0)
+    solver
+        .re(31_300.0)
         .solidity(0.3525)
         .n_streamtubes(n)
         .verbosity(Verbosity::Silent);

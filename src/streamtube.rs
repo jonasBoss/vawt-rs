@@ -5,7 +5,7 @@ use std::{
 
 use ndarray::{array, Array1};
 
-use crate::{rot_mat, turbine::Turbine};
+use crate::{rot_mat, Turbine};
 
 #[derive(Debug)]
 pub struct StreamTube {
@@ -20,7 +20,7 @@ pub struct StreamTube {
 
 impl StreamTube {
     /// create a new streamtube at the turbine position `theta` (in radians)
-    /// with the pitch angle `beta` (in radians) and an upstream induction 
+    /// with the pitch angle `beta` (in radians) and an upstream induction
     /// factor `a_0`. For upstream streamtubes this is likely `0.0`
     pub fn new(theta: f64, beta: f64, a_0: f64) -> Self {
         Self { a_0, theta, beta }

@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use itertools::Itertools;
-use ndarray::{s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis, array};
+use ndarray::{array, s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec},
@@ -21,13 +21,13 @@ impl ClCd {
     /// # returns
     /// `(c_n: f64, c_t: f64)`
     pub fn to_tangential(&self, alpha: f64, beta: f64) -> (f64, f64) {
-        let inv_drag = array![[1.0,0.0],[0.0,-1.0]];
+        let inv_drag = array![[1.0, 0.0], [0.0, -1.0]];
         let target = rot_mat(alpha + beta).dot(&inv_drag.dot(&self.0));
         (target[0], target[1])
     }
 
     pub fn to_global(&self, alpha: f64, beta: f64, theta: f64) -> (f64, f64) {
-        let inv_drag = array![[1.0,0.0],[0.0,-1.0]];
+        let inv_drag = array![[1.0, 0.0], [0.0, -1.0]];
         let target = rot_mat(alpha + beta + theta).dot(&inv_drag.dot(&self.0));
         (target[0], target[1])
     }
@@ -165,7 +165,8 @@ impl AerofoilBuilder {
         };
 
         // the order of re is not guaranteed, sort it accoridngly
-        let (re, data): (Vec<_>, Vec<_>) = self.re
+        let (re, data): (Vec<_>, Vec<_>) = self
+            .re
             .iter()
             .copied()
             .zip(data)
