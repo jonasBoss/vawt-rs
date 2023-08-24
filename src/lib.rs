@@ -77,9 +77,14 @@ impl<'a> VAWTSolver<'a> {
 
     /// solve the VAWT Turbine with a constant beta angle in radians
     pub fn solve_with_beta(&self, beta: f64) -> VAWTSolution<'a> {
+        self.solve_with_beta_fn(|_| beta)
+    }
+
+    /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
+    pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
         let d_t_half = PI / self.n_streamtubes as f64;
         let theta = Array::linspace(d_t_half, PI * 2.0 - d_t_half, self.n_streamtubes);
-        let beta = Array::from_elem(self.n_streamtubes, beta);
+        let beta = Array::from_iter(theta.iter().cloned().map(beta));
         let mut a_0 = Array::zeros(self.n_streamtubes);
         let mut a_up: Array1<f64> = Array::zeros(self.n_streamtubes / 2);
         let mut a_down: Array1<f64> = Array::zeros(self.n_streamtubes / 2);
@@ -131,11 +136,6 @@ impl<'a> VAWTSolver<'a> {
             a_0,
             epsilon,
         }
-    }
-
-    /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
-    pub fn solve_with_beta_fn(&self, _beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
-        todo!()
     }
 
     /// solve the VAWT Turbine while optimizing beta
