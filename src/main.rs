@@ -1,10 +1,10 @@
 use std::{error::Error, f64::consts::PI, fs::File};
 
 use csv::ReaderBuilder;
-use ndarray::{array, s, Array, Array2, Axis};
+use ndarray::{Array, Array2, Axis};
 use ndarray_csv::Array2Reader;
 
-use vawt::{areofoil::Aerofoil, streamtube::StreamTube, Turbine, VAWTSolver, Verbosity};
+use vawt::{areofoil::Aerofoil, VAWTSolver, Verbosity};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let aerofoil = Aerofoil::builder()
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let n = 72;
     let d_t_half = PI / n as f64;
-    let theta = Array::linspace(d_t_half, 2.0 * PI - d_t_half, n);
+    let _theta = Array::linspace(d_t_half, 2.0 * PI - d_t_half, n);
 
     let mut solver = VAWTSolver::new(&aerofoil);
     solver
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .solidity(0.3525)
         .n_streamtubes(n)
         .verbosity(Verbosity::Silent);
-    let solution = solver.tsr(3.25).solve_with_beta(0.0);
+    let _solution = solver.tsr(3.25).solve_with_beta(0.0);
     Ok(())
 }
 

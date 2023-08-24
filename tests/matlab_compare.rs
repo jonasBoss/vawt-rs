@@ -1,8 +1,8 @@
-use std::{error::Error, f64::consts::PI, fs::File};
+use std::{error::Error, fs::File};
 
-use approx::{assert_abs_diff_eq, assert_relative_eq};
+use approx::assert_relative_eq;
 use csv::ReaderBuilder;
-use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, Zip};
+use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis};
 use ndarray_csv::Array2Reader;
 use vawt::{areofoil::Aerofoil, VAWTSolution, VAWTSolver, Verbosity};
 
@@ -47,7 +47,7 @@ impl MatlabSolution {
         for mut datapoint in arr.axis_iter_mut(Axis(0)) {
             datapoint[0] = datapoint[0].to_radians();
             datapoint[3] = datapoint[3].to_radians();
-            datapoint[4] = datapoint[4] * 1e5;
+            datapoint[4] *= 1e5;
         }
         Ok(MatlabSolution(arr))
     }

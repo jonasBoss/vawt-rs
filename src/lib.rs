@@ -123,7 +123,7 @@ impl<'a> VAWTSolver<'a> {
         a_0.slice_mut(slice_down).assign(&a_up);
         let a = concatenate![Axis(0), a_up, a_down];
         VAWTSolution {
-            turbine: turbine,
+            turbine,
             n_streamtubes,
             theta,
             beta,
@@ -134,7 +134,7 @@ impl<'a> VAWTSolver<'a> {
     }
 
     /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
-    pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
+    pub fn solve_with_beta_fn(&self, _beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
         todo!()
     }
 
