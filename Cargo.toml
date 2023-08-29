@@ -7,8 +7,11 @@ edition = "2021"
 
 [dependencies]
 approx = "0.5.1"
+argmin = "0.8.1"
 csv = "1.2.2"
+env_logger = "0.10.0"
 itertools = "0.11.0"
+log = "0.4.20"
 ndarray = "0.15.6"
 ndarray-csv = "0.5.2"
 ndarray-interp = {path = "../ndarray-interp"}

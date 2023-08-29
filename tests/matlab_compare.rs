@@ -4,7 +4,7 @@ use approx::assert_relative_eq;
 use csv::ReaderBuilder;
 use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis};
 use ndarray_csv::Array2Reader;
-use vawt::{areofoil::Aerofoil, VAWTSolution, VAWTSolver, Verbosity};
+use vawt::{areofoil::Aerofoil, VAWTSolution, VAWTSolver};
 
 fn load_naca_0018() -> Result<Aerofoil, Box<dyn Error>> {
     fn read_array(path: &str) -> Result<Array2<f64>, Box<dyn Error>> {
@@ -88,7 +88,6 @@ fn naca0018_solution(
         .solidity(0.3525)
         .n_streamtubes(matlab_solution.n_streamtubes())
         .tsr(3.25)
-        .verbosity(Verbosity::Silent)
         .solve_with_beta(0.0);
     Ok((aerofoil, matlab_solution, solution))
 }

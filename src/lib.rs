@@ -1,8 +1,11 @@
 use std::f64::consts::PI;
 
 use areofoil::Aerofoil;
-use ndarray::{array, concatenate, s, Array, Array1, Array2, Axis, Zip};
+
+use log::info;
+use ndarray::{array, s, Array, Array1, Array2, Zip};
 use ndarray_interp::interp1d::{Interp1D, Linear};
+
 use streamtube::StreamTube;
 
 pub mod areofoil;
@@ -21,7 +24,6 @@ pub struct VAWTSolver<'a> {
     re: f64,
     solidity: f64,
     epsilon: f64,
-    verbosity: Verbosity,
 }
 
 /// A VAWT case and solver settings
@@ -41,7 +43,6 @@ impl<'a> VAWTSolver<'a> {
             re: 60_000.0,
             solidity: 0.1,
             epsilon: 0.01,
-            verbosity: Verbosity::Normal,
         }
     }
 
@@ -70,11 +71,6 @@ impl<'a> VAWTSolver<'a> {
         self
     }
 
-    pub fn verbosity(&mut self, verbosity: Verbosity) -> &mut Self {
-        self.verbosity = verbosity;
-        self
-    }
-
     /// solve the VAWT Turbine with a constant beta angle in radians
     pub fn solve_with_beta(&self, beta: f64) -> VAWTSolution<'a> {
         self.solve_with_beta_fn(|_| beta)
@@ -82,59 +78,76 @@ impl<'a> VAWTSolver<'a> {
 
     /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
     pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
+        self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
+            let beta_up = beta(theta_up);
+            let beta_down = beta(theta_down);
+            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(turbine, self.epsilon);
+            let a_down =
+                StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
+
+            (beta_up, beta_down, a_up, a_down)
+        })
+    }
+
+    /// iterate over all streamtubes, applying `solve_fn`.
+    ///
+    /// `solve_fn` is called for each pair of up and downstream streamtubes with:
+    /// `Fn(turbine: &Turbine, theta_up: &f64, theta_down: &f64) -> (beta_up: f64, beta_down: f64, a_up: f64, a_down: f64)`
+    fn iter_streamtubes(
+        &self,
+        solve_fn: impl Fn(&Turbine, &f64, &f64) -> (f64, f64, f64, f64),
+    ) -> VAWTSolution<'a> {
         let d_t_half = PI / self.n_streamtubes as f64;
         let theta = Array::linspace(d_t_half, PI * 2.0 - d_t_half, self.n_streamtubes);
-        let beta = Array::from_iter(theta.iter().cloned().map(beta));
+        let mut beta = Array::zeros(self.n_streamtubes);
+        let mut a = Array::zeros(self.n_streamtubes);
         let mut a_0 = Array::zeros(self.n_streamtubes);
-        let mut a_up: Array1<f64> = Array::zeros(self.n_streamtubes / 2);
-        let mut a_down: Array1<f64> = Array::zeros(self.n_streamtubes / 2);
 
         let slice_up = s![..self.n_streamtubes / 2];
         let slice_down = s![self.n_streamtubes / 2 ..;-1];
 
-        let VAWTSolver {
-            aerofoil,
-            n_streamtubes,
-            tsr,
-            re,
-            solidity,
-            epsilon,
-            verbosity,
-        } = *self;
+        let (beta_up, beta_down) = beta.multi_slice_mut((slice_up, slice_down));
+        let (a_up, a_down) = a.multi_slice_mut((slice_up, slice_down));
+
         let turbine = Turbine {
-            re,
-            tsr,
-            solidity,
-            aerofoil,
+            re: self.re,
+            tsr: self.tsr,
+            solidity: self.solidity,
+            aerofoil: self.aerofoil,
+        };
+
+        let func = |theta_up: &f64,
+                    theta_down: &f64,
+                    beta_up: &mut f64,
+                    beta_down: &mut f64,
+                    a_up: &mut f64,
+                    a_down: &mut f64| {
+            info!(
+                "solving for theta = {}° and theta = {}°",
+                theta_up.to_degrees(),
+                theta_down.to_degrees()
+            );
+            (*beta_up, *beta_down, *a_up, *a_down) = solve_fn(&turbine, theta_up, theta_down)
         };
 
         Zip::from(theta.slice(slice_up))
             .and(theta.slice(slice_down))
-            .and(beta.slice(slice_up))
-            .and(beta.slice(slice_down))
-            .and(a_up.view_mut())
-            .and(a_down.slice_mut(s![..;-1]))
-            .for_each(
-                |&theta_up, &theta_down, &beta_up, &beta_down, a_up, a_down| {
-                    verbosity.print(format!("solving for theta = {}°", theta_up.to_degrees()));
-                    *a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(&turbine, epsilon);
+            .and(beta_up)
+            .and(beta_down)
+            .and(a_up)
+            .and(a_down)
+            .for_each(func);
 
-                    verbosity.print(format!("solving for theta = {}°", theta_down.to_degrees()));
-                    *a_down =
-                        StreamTube::new(theta_down, beta_down, *a_up).solve_a(&turbine, epsilon);
-                },
-            );
+        a_0.slice_mut(slice_down).assign(&a.slice(slice_up));
 
-        a_0.slice_mut(slice_down).assign(&a_up);
-        let a = concatenate![Axis(0), a_up, a_down];
         VAWTSolution {
             turbine,
-            n_streamtubes,
+            n_streamtubes: self.n_streamtubes,
             theta,
             beta,
             a,
             a_0,
-            epsilon,
+            epsilon: self.epsilon,
         }
     }
 
@@ -241,29 +254,5 @@ impl<'a> VAWTSolution<'a> {
         let a_0 = self.a_0(theta);
         let beta = self.beta(theta);
         StreamTube::new(theta, beta, a_0)
-    }
-}
-
-///
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Verbosity {
-    Silent,
-    Normal,
-    Debug,
-}
-
-impl Verbosity {
-    fn print<S: AsRef<str>>(&self, s: S) {
-        use Verbosity::*;
-        if *self == Normal || *self == Debug {
-            println!("{}", s.as_ref())
-        }
-    }
-
-    fn debug<S: AsRef<str>>(&self, s: S) {
-        use Verbosity::*;
-        if *self == Debug {
-            println!("{}", s.as_ref())
-        }
     }
 }

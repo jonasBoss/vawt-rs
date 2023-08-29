@@ -1,12 +1,15 @@
 use std::{error::Error, f64::consts::PI, fs::File};
 
 use csv::ReaderBuilder;
+
 use ndarray::{Array, Array2, Axis};
 use ndarray_csv::Array2Reader;
 
-use vawt::{areofoil::Aerofoil, VAWTSolver, Verbosity};
+use vawt::{areofoil::Aerofoil, VAWTSolver};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+
     let aerofoil = Aerofoil::builder()
         .add_data_row(
             read_array("examples/NACA0018/NACA0018Re0080.data")?,
@@ -30,11 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _theta = Array::linspace(d_t_half, 2.0 * PI - d_t_half, n);
 
     let mut solver = VAWTSolver::new(&aerofoil);
-    solver
-        .re(31_300.0)
-        .solidity(0.3525)
-        .n_streamtubes(n)
-        .verbosity(Verbosity::Silent);
+    solver.re(31_300.0).solidity(0.3525).n_streamtubes(n);
     let _solution = solver.tsr(3.25).solve_with_beta(0.0);
     Ok(())
 }
