@@ -98,22 +98,17 @@ impl<'a> VAWTSolver<'a> {
     /// solve the VAWT Turbine while optimizing beta
     pub fn solve_optimize_beta(&self) -> VAWTSolution<'a> {
         self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
-            let cost = OptimizeBeta {
-                turbine,
-                epsilon: self.epsilon,
-                theta_up,
-                theta_down,
-            };
+            let cost = OptimizeBeta::new(turbine, self.epsilon, theta_up, theta_down);
             let solver = ParticleSwarm::new(
                 (
-                    Array::from_elem(2, -30f64.to_radians()),
-                    Array::from_elem(2, 30f64.to_radians()),
+                    Array::from_elem(2, -20f64.to_radians()),
+                    Array::from_elem(2, 20f64.to_radians()),
                 ),
-                32,
+                16,
             );
 
             let mut res = Executor::new(cost, solver)
-                .configure(|state| state.max_iters(50))
+                .configure(|state| state.max_iters(25))
                 .run()
                 .unwrap();
             let best_param = res.state.take_best_individual().unwrap().position;
@@ -124,6 +119,24 @@ impl<'a> VAWTSolver<'a> {
                 StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
             (beta_up, beta_down, a_up, a_down)
         })
+    }
+
+    /// the cost function that gets optimized by [`solve_optimize_beta()`](VAWTSolver::solve_optimize_beta())
+    /// for each streamtube pair
+    ///
+    /// the parameters to the cost fn is an [`Array1<f64>`] of length 2. One beta value for the upstream,
+    /// and one for the downstream streamtube
+    ///
+    /// # panics
+    /// when `theta` is not between 0 ab PI
+    pub fn cost_fn(&'a self, theta: f64) -> impl 'a + Fn(&Array1<f64>) -> f64 {
+        assert!(0.0 < theta && theta < PI);
+        let theta_down = 2.0 * PI - theta;
+        let turbine = self.get_turbine();
+
+        move |param: &Array1<f64>| {
+            OptimizeBeta::new(&turbine, self.epsilon, theta, theta_down).cost(param)
+        }
     }
 
     /// solve a single streamtube

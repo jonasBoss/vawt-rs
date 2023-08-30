@@ -151,12 +151,22 @@ pub(crate) struct OptimizeBeta<'a> {
     pub(crate) theta_up: f64,
     pub(crate) theta_down: f64,
 }
+impl<'a> OptimizeBeta<'a> {
+    pub(crate) fn new(
+        turbine: &'a Turbine<'a>,
+        epsilon: f64,
+        theta_up: f64,
+        theta_down: f64,
+    ) -> Self {
+        Self {
+            turbine,
+            epsilon,
+            theta_up,
+            theta_down,
+        }
+    }
 
-impl CostFunction for OptimizeBeta<'_> {
-    type Param = Array1<f64>;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+    pub(crate) fn cost(&self, param: &Array1<f64>) -> f64 {
         let tube_up = StreamTube::new(self.theta_up, param[0], 0.0);
         let a_up = tube_up.solve_a(self.turbine, self.epsilon);
         let tube_down = StreamTube::new(self.theta_down, param[1], a_up);
@@ -167,7 +177,16 @@ impl CostFunction for OptimizeBeta<'_> {
 
         let ct = tube_up.c_tan(a_up, self.turbine) * w_up.powi(2)
             + tube_down.c_tan(a_down, self.turbine) * w_down.powi(2);
-        Ok(1.0 - ct)
+        1.0 - ct
+    }
+}
+
+impl CostFunction for OptimizeBeta<'_> {
+    type Param = Array1<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+        Ok(self.cost(param))
     }
 }
 
