@@ -25,6 +25,8 @@ pub struct VAWTSolver<'a> {
     re: f64,
     solidity: f64,
     epsilon: f64,
+    particles: usize,
+    iterations: u64,
 }
 
 /// A VAWT case and solver settings
@@ -36,6 +38,8 @@ impl<'a> VAWTSolver<'a> {
     /// - `re = 60_000.0` Reynolds number of the turbine
     /// - `solidity = 0.1` Solidity of the Turbine
     /// - `epsilon = 0.01` the solution accuracy for a
+    /// - `particles = 8` the number of particles for beta optimization
+    /// - `iterations = 30` the number of iterations for beta optimization
     pub fn new(aerofoil: &'a Aerofoil) -> VAWTSolver<'a> {
         VAWTSolver {
             aerofoil,
@@ -44,6 +48,8 @@ impl<'a> VAWTSolver<'a> {
             re: 60_000.0,
             solidity: 0.1,
             epsilon: 0.01,
+            particles: 8,
+            iterations: 30,
         }
     }
 
@@ -77,6 +83,18 @@ impl<'a> VAWTSolver<'a> {
         self
     }
 
+    /// set the number of particles for [`solve_optimize_beta()`](VAWTSolver::solve_optimize_beta)
+    pub fn particles(&mut self, particles: usize) -> &mut Self {
+        self.particles = particles;
+        self
+    }
+
+    /// set the number of iterations for [`solve_optimize_beta()`](VAWTSolver::solve_optimize_beta)
+    pub fn iterations(&mut self, iters: u64) -> &mut Self {
+        self.iterations = iters;
+        self
+    }
+
     /// solve the VAWT Turbine with a constant beta angle in radians
     pub fn solve_with_beta(&self, beta: f64) -> VAWTSolution<'a> {
         self.solve_with_beta_fn(|_| beta)
@@ -104,11 +122,11 @@ impl<'a> VAWTSolver<'a> {
                     Array::from_elem(2, -20f64.to_radians()),
                     Array::from_elem(2, 20f64.to_radians()),
                 ),
-                16,
+                self.particles,
             );
 
             let mut res = Executor::new(cost, solver)
-                .configure(|state| state.max_iters(25))
+                .configure(|state| state.max_iters(self.iterations))
                 .run()
                 .unwrap();
             let best_param = res.state.take_best_individual().unwrap().position;
@@ -121,7 +139,7 @@ impl<'a> VAWTSolver<'a> {
         })
     }
 
-    /// the cost function that gets optimized by [`solve_optimize_beta()`](VAWTSolver::solve_optimize_beta())
+    /// the cost function that gets optimized by [`solve_optimize_beta()`](VAWTSolver::solve_optimize_beta)
     /// for each streamtube pair
     ///
     /// the parameters to the cost fn is an [`Array1<f64>`] of length 2. One beta value for the upstream,
