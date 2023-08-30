@@ -2,12 +2,12 @@ use std::f64::consts::PI;
 
 use areofoil::Aerofoil;
 
-use argmin::{core::{Operator, CostFunction, Executor}, solver::{conjugategradient::ConjugateGradient, brent::BrentOpt, particleswarm::ParticleSwarm}};
+use argmin::{core::Executor, solver::particleswarm::ParticleSwarm};
 use log::info;
 use ndarray::{array, s, Array, Array1, Array2, Zip};
 use ndarray_interp::interp1d::{Interp1D, Linear};
 
-use streamtube::{StreamTube, StreamTubeSolution, OptimizeBeta};
+use streamtube::{OptimizeBeta, StreamTube, StreamTubeSolution};
 
 pub mod areofoil;
 pub mod streamtube;
@@ -98,26 +98,36 @@ impl<'a> VAWTSolver<'a> {
     /// solve the VAWT Turbine while optimizing beta
     pub fn solve_optimize_beta(&self) -> VAWTSolution<'a> {
         self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
-            let cost = OptimizeBeta { turbine, epsilon: self.epsilon, theta_up, theta_down };
-            let solver = ParticleSwarm::new((
-                Array::from_elem(2, -30f64.to_radians()),
-                Array::from_elem(2, 30f64.to_radians()),
-            ), 32);
+            let cost = OptimizeBeta {
+                turbine,
+                epsilon: self.epsilon,
+                theta_up,
+                theta_down,
+            };
+            let solver = ParticleSwarm::new(
+                (
+                    Array::from_elem(2, -30f64.to_radians()),
+                    Array::from_elem(2, 30f64.to_radians()),
+                ),
+                32,
+            );
 
             let mut res = Executor::new(cost, solver)
                 .configure(|state| state.max_iters(50))
-                .run().unwrap();
+                .run()
+                .unwrap();
             let best_param = res.state.take_best_individual().unwrap().position;
 
             let (beta_up, beta_down) = (best_param[0], best_param[1]);
             let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(turbine, self.epsilon);
-            let a_down = StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
+            let a_down =
+                StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
             (beta_up, beta_down, a_up, a_down)
         })
     }
 
     /// solve a single streamtube
-    pub fn solve_steamtube(&self, theta: f64, beta: f64, a_0: f64)  -> StreamTubeSolution<'a> {
+    pub fn solve_steamtube(&self, theta: f64, beta: f64, a_0: f64) -> StreamTubeSolution<'a> {
         let turbine = self.get_turbine();
         let tube = StreamTube::new(theta, beta, a_0);
         let a = tube.solve_a(&turbine, self.epsilon);
@@ -272,13 +282,13 @@ impl<'a> VAWTSolution<'a> {
     }
 
     /// the difference between the wind thrust and the foil force (solution error)
-    /// at the location `theta` 
+    /// at the location `theta`
     pub fn thrust_error(&self, theta: f64) -> f64 {
         self.streamtube(theta).thrust_error()
     }
 
-    /// tangential foil coefficient at the location `theta` 
-    /// 
+    /// tangential foil coefficient at the location `theta`
+    ///
     /// coefficient of lift and drag evaluated in tangential direction
     pub fn c_tan(&self, theta: f64) -> f64 {
         self.streamtube(theta).c_tan()
@@ -288,24 +298,24 @@ impl<'a> VAWTSolution<'a> {
         self.epsilon
     }
 
-    /// the relative windspeed at the foil at location `theta` 
+    /// the relative windspeed at the foil at location `theta`
     pub fn w(&self, theta: f64) -> f64 {
         self.streamtube(theta).w()
     }
 
-    /// the angle of attac at the foil at location `theta` 
+    /// the angle of attac at the foil at location `theta`
     pub fn alpha(&self, theta: f64) -> f64 {
         self.streamtube(theta).alpha()
     }
 
-    /// the local reynolds number at the foil at location `theta` 
+    /// the local reynolds number at the foil at location `theta`
     pub fn re(&self, theta: f64) -> f64 {
         self.streamtube(theta).re()
     }
 
     fn streamtube(&self, theta: f64) -> StreamTubeSolution<'a> {
         let a_0 = self.a_0(theta);
-        let a =  self.a(theta);
+        let a = self.a(theta);
         let beta = self.beta(theta);
         let tube = StreamTube::new(theta, beta, a_0);
         StreamTubeSolution::new(self.turbine.clone(), tube, a)

@@ -80,11 +80,12 @@ impl StreamTube {
 
     /// tangential foil coefficient
     pub(crate) fn c_tan(&self, a: f64, turbine: &Turbine) -> f64 {
-        let (w, alpha, re) = self.w_alpha_re(a, turbine);
+        let (_w, alpha, re) = self.w_alpha_re(a, turbine);
         turbine
             .aerofoil
             .cl_cd(alpha, re)
-            .to_tangential(alpha, self.beta).1
+            .to_tangential(alpha, self.beta)
+            .1
     }
 
     fn a_strickland(&self, turbine: &Turbine) -> f64 {
@@ -144,11 +145,10 @@ impl StreamTube {
     }
 }
 
-
 pub(crate) struct OptimizeBeta<'a> {
     pub(crate) turbine: &'a Turbine<'a>,
     pub(crate) epsilon: f64,
-    pub(crate) theta_up: f64, 
+    pub(crate) theta_up: f64,
     pub(crate) theta_down: f64,
 }
 
@@ -158,18 +158,18 @@ impl CostFunction for OptimizeBeta<'_> {
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
         let tube_up = StreamTube::new(self.theta_up, param[0], 0.0);
-        let a_up = tube_up.solve_a(&self.turbine, self.epsilon);
+        let a_up = tube_up.solve_a(self.turbine, self.epsilon);
         let tube_down = StreamTube::new(self.theta_down, param[1], a_up);
-        let a_down = tube_down.solve_a(&self.turbine, self.epsilon);
+        let a_down = tube_down.solve_a(self.turbine, self.epsilon);
 
-        let w_up = tube_up.w_vec(a_up, &self.turbine).magnitude();
-        let w_down = tube_down.w_vec(a_down, &self.turbine).magnitude();
+        let w_up = tube_up.w_vec(a_up, self.turbine).magnitude();
+        let w_down = tube_down.w_vec(a_down, self.turbine).magnitude();
 
-        let ct = tube_up.c_tan(a_up, &self.turbine) * w_up.powi(2) + tube_down.c_tan(a_down, &self.turbine) * w_down.powi(2);
-        Ok(1.0-ct)
+        let ct = tube_up.c_tan(a_up, self.turbine) * w_up.powi(2)
+            + tube_down.c_tan(a_down, self.turbine) * w_down.powi(2);
+        Ok(1.0 - ct)
     }
 }
-
 
 pub struct StreamTubeSolution<'a> {
     turbine: Turbine<'a>,
@@ -225,8 +225,8 @@ impl<'a> StreamTubeSolution<'a> {
         self.tube.thrust_error(self.a, &self.turbine)
     }
 
-    /// tangential foil coefficient 
-    /// 
+    /// tangential foil coefficient
+    ///
     /// coefficient of lift and drag evaluated in tangential direction
     pub fn c_tan(&self) -> f64 {
         self.tube.c_tan(self.a, &self.turbine)
