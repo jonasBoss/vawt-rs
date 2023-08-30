@@ -112,7 +112,7 @@ fn test_naca_0018_induction_factor() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_naca_0018_w() -> Result<(), Box<dyn Error>> {
     let (_, matlab_solution, solution) = naca0018_solution()?;
-    let rust_w = map_theta(&matlab_solution, |theta| solution.w_alpha_re(theta).0);
+    let rust_w = map_theta(&matlab_solution, |theta| solution.w(theta));
     assert_relative_eq!(
         rust_w,
         matlab_solution.w(),
@@ -125,7 +125,7 @@ fn test_naca_0018_w() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_naca_0018_alpha() -> Result<(), Box<dyn Error>> {
     let (_, matlab_solution, solution) = naca0018_solution()?;
-    let rust_alpha = map_theta(&matlab_solution, |theta| solution.w_alpha_re(theta).1);
+    let rust_alpha = map_theta(&matlab_solution, |theta| solution.alpha(theta));
     assert_relative_eq!(
         rust_alpha,
         matlab_solution.alpha(),
@@ -138,7 +138,7 @@ fn test_naca_0018_alpha() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_naca_0018_re() -> Result<(), Box<dyn Error>> {
     let (_, matlab_solution, solution) = naca0018_solution()?;
-    let rust_re = map_theta(&matlab_solution, |theta| solution.w_alpha_re(theta).2);
+    let rust_re = map_theta(&matlab_solution, |theta| solution.re(theta));
     assert_relative_eq!(
         rust_re,
         matlab_solution.re(),

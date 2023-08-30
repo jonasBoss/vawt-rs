@@ -3,6 +3,7 @@ use std::{
     ops::{Add, Sub},
 };
 
+use argmin::core::CostFunction;
 use ndarray::{array, Array1};
 
 use crate::{rot_mat, Turbine};
@@ -55,7 +56,7 @@ impl StreamTube {
     /// for a given induction factor a
     ///
     /// for good solutions this should be small
-    pub fn thrust_error(&self, a: f64, turbine: &Turbine) -> f64 {
+    fn thrust_error(&self, a: f64, turbine: &Turbine) -> f64 {
         let foil_force = self.foil_thrust(a, turbine);
         let wind_force = StreamTube::wind_thrust(a);
 
@@ -67,8 +68,8 @@ impl StreamTube {
     ///
     /// # returns
     /// `(w: f64, alpha: f64, re: f64)`
-    pub fn w_alpha_re(&self, a: f64, turbine: &Turbine) -> (f64, f64, f64) {
-        let w = self.w(a, turbine);
+    fn w_alpha_re(&self, a: f64, turbine: &Turbine) -> (f64, f64, f64) {
+        let w = self.w_vec(a, turbine);
         let (w_x_floil, w_y_foil) = w.to_foil(self.theta, self.beta);
 
         let alpha = w_y_foil.atan2(w_x_floil) + PI / 2.0;
@@ -77,17 +78,13 @@ impl StreamTube {
         (w, alpha, re)
     }
 
-    /// tangential foil coefficient and tangential force coeffitient
-    ///
-    /// # returns
-    /// (c_tan: f64, cf_tan: f64)
-    pub fn c_tan_cf_tan(&self, a: f64, turbine: &Turbine) -> (f64, f64) {
+    /// tangential foil coefficient
+    pub(crate) fn c_tan(&self, a: f64, turbine: &Turbine) -> f64 {
         let (w, alpha, re) = self.w_alpha_re(a, turbine);
-        let (_, ct) = turbine
+        turbine
             .aerofoil
             .cl_cd(alpha, re)
-            .to_tangential(alpha, self.beta);
-        (ct, ct * self.force_normalization(w, turbine))
+            .to_tangential(alpha, self.beta).1
     }
 
     fn a_strickland(&self, turbine: &Turbine) -> f64 {
@@ -114,7 +111,7 @@ impl StreamTube {
     }
 
     fn force_normalization(&self, w: f64, turbine: &Turbine) -> f64 {
-        (w / self.c_0().magnitude()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs())
+        (w / self.c_0()).powi(2) * turbine.solidity / (PI * self.theta.sin().abs())
     }
 
     /// Thrust coefficient by momentum theory or Glauert empirical formula
@@ -130,20 +127,109 @@ impl StreamTube {
     }
 
     /// reference windspeed
-    fn c_0(&self) -> Velocity {
-        Velocity::from_global(0.0, -(1.0 - 2.0 * self.a_0))
+    fn c_0(&self) -> f64 {
+        1.0 - 2.0 * self.a_0
     }
 
     /// windspeed at the foil in negative y direction
-    fn c_1(&self, a: f64) -> Velocity {
-        let magnitude = (1.0 - 2.0 * self.a_0) * (1.0 - a);
+    fn c_1_vec(&self, a: f64) -> Velocity {
+        let magnitude = self.c_0() * (1.0 - a);
         Velocity::from_global(0.0, -magnitude)
     }
 
     /// relative velocity at foil in global xy coordinates
-    fn w(&self, a: f64, turbine: &Turbine) -> Velocity {
+    fn w_vec(&self, a: f64, turbine: &Turbine) -> Velocity {
         let u = turbine.tsr;
-        self.c_1(a) - Velocity::from_tangential(0.0, u, self.theta)
+        self.c_1_vec(a) - Velocity::from_tangential(0.0, u, self.theta)
+    }
+}
+
+
+pub(crate) struct OptimizeBeta<'a> {
+    pub(crate) turbine: &'a Turbine<'a>,
+    pub(crate) epsilon: f64,
+    pub(crate) theta_up: f64, 
+    pub(crate) theta_down: f64,
+}
+
+impl CostFunction for OptimizeBeta<'_> {
+    type Param = Array1<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+        let tube_up = StreamTube::new(self.theta_up, param[0], 0.0);
+        let a_up = tube_up.solve_a(&self.turbine, self.epsilon);
+        let tube_down = StreamTube::new(self.theta_down, param[1], a_up);
+        let a_down = tube_down.solve_a(&self.turbine, self.epsilon);
+
+        let w_up = tube_up.w_vec(a_up, &self.turbine).magnitude();
+        let w_down = tube_down.w_vec(a_down, &self.turbine).magnitude();
+
+        let ct = tube_up.c_tan(a_up, &self.turbine) * w_up.powi(2) + tube_down.c_tan(a_down, &self.turbine) * w_down.powi(2);
+        Ok(1.0-ct)
+    }
+}
+
+
+pub struct StreamTubeSolution<'a> {
+    turbine: Turbine<'a>,
+    tube: StreamTube,
+    a: f64,
+}
+
+impl<'a> StreamTubeSolution<'a> {
+    pub(crate) fn new(turbine: Turbine<'a>, tube: StreamTube, a: f64) -> Self {
+        StreamTubeSolution { turbine, tube, a }
+    }
+
+    /// the induction factor of the solution
+    pub fn a(&self) -> f64 {
+        self.a
+    }
+
+    /// the induction factor of the upstream streamtube
+    pub fn a_0(&self) -> f64 {
+        self.tube.a_0
+    }
+
+    /// the pitch angel in radians
+    pub fn beta(&self) -> f64 {
+        self.tube.beta
+    }
+
+    /// the stramtube location in radinas
+    pub fn theta(&self) -> f64 {
+        self.tube.theta
+    }
+
+    /// the relative windspeed at the foil
+    pub fn w(&self) -> f64 {
+        self.tube.w_vec(self.a, &self.turbine).magnitude()
+    }
+
+    /// the angle of attac at the foil
+    pub fn alpha(&self) -> f64 {
+        let w = self.tube.w_vec(self.a, &self.turbine);
+        let (w_x_floil, w_y_foil) = w.to_foil(self.tube.theta, self.tube.beta);
+
+        w_y_foil.atan2(w_x_floil) + PI / 2.0
+    }
+
+    /// the local reynolds number at the foil
+    pub fn re(&self) -> f64 {
+        self.w() * self.turbine.re
+    }
+
+    /// the difference between the wind thrust and the foil force of the solution
+    pub fn thrust_error(&self) -> f64 {
+        self.tube.thrust_error(self.a, &self.turbine)
+    }
+
+    /// tangential foil coefficient 
+    /// 
+    /// coefficient of lift and drag evaluated in tangential direction
+    pub fn c_tan(&self) -> f64 {
+        self.tube.c_tan(self.a, &self.turbine)
     }
 }
 
