@@ -160,11 +160,6 @@ impl Velocity {
         Velocity(rot_mat(theta).dot(&array![x, y]))
     }
 
-    pub fn to_tangential(&self, theta: f64) -> (f64, f64) {
-        let target = rot_mat(-theta).dot(&self.0);
-        (target[0], target[1])
-    }
-
     pub fn to_foil(&self, theta: f64, beta: f64) -> (f64, f64) {
         let target = rot_mat(-theta - beta).dot(&self.0);
         (target[0], target[1])

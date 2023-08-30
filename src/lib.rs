@@ -2,6 +2,7 @@ use std::f64::consts::PI;
 
 use areofoil::Aerofoil;
 
+use argmin::{core::{Operator, CostFunction, Executor}, solver::{conjugategradient::ConjugateGradient, brent::BrentOpt, particleswarm::ParticleSwarm}};
 use log::info;
 use ndarray::{array, s, Array, Array1, Array2, Zip};
 use ndarray_interp::interp1d::{Interp1D, Linear};
@@ -71,6 +72,11 @@ impl<'a> VAWTSolver<'a> {
         self
     }
 
+    pub fn epsilon(&mut self, epsilon: f64) -> &mut Self {
+        self.epsilon = epsilon;
+        self
+    }
+
     /// solve the VAWT Turbine with a constant beta angle in radians
     pub fn solve_with_beta(&self, beta: f64) -> VAWTSolution<'a> {
         self.solve_with_beta_fn(|_| beta)
@@ -85,6 +91,27 @@ impl<'a> VAWTSolver<'a> {
             let a_down =
                 StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
 
+            (beta_up, beta_down, a_up, a_down)
+        })
+    }
+
+    /// solve the VAWT Turbine while optimizing beta
+    pub fn solve_optimize_beta(&self) -> VAWTSolution<'a> {
+        self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
+            let cost = OptimizeBeta { turbine, epsilon: self.epsilon, theta_up, theta_down };
+            let solver = ParticleSwarm::new((
+                Array::from_elem(2, -30f64.to_radians()),
+                Array::from_elem(2, 30f64.to_radians()),
+            ), 32);
+
+            let mut res = Executor::new(cost, solver)
+                .configure(|state| state.max_iters(50))
+                .run().unwrap();
+            let best_param = res.state.take_best_individual().unwrap().position;
+
+            let (beta_up, beta_down) = (best_param[0], best_param[1]);
+            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(turbine, self.epsilon);
+            let a_down = StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
             (beta_up, beta_down, a_up, a_down)
         })
     }
@@ -150,10 +177,30 @@ impl<'a> VAWTSolver<'a> {
             epsilon: self.epsilon,
         }
     }
+}
 
-    /// solve the VAWT Turbine while optimizing beta
-    pub fn solve_optimize_beta(&self) -> VAWTSolution<'a> {
-        todo!()
+struct OptimizeBeta<'a> {
+    turbine: &'a Turbine<'a>,
+    epsilon: f64,
+    theta_up: f64, 
+    theta_down: f64,
+}
+
+impl CostFunction for OptimizeBeta<'_> {
+    type Param = Array1<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+        let tube_up = StreamTube::new(self.theta_up, param[0], 0.0);
+        let a_up = tube_up.solve_a(&self.turbine, self.epsilon);
+        let tube_down = StreamTube::new(self.theta_down, param[1], a_up);
+        let a_down = tube_down.solve_a(&self.turbine, self.epsilon);
+
+        let w_up = tube_up.w_alpha_re(a_up, &self.turbine).0;
+        let w_down = tube_down.w_alpha_re(a_down, &self.turbine).0;
+
+        let ct = tube_up.c_tan_cf_tan(a_up, &self.turbine).0 * w_up.powi(2) + tube_down.c_tan_cf_tan(a_down, &self.turbine).0 * w_down.powi(2);
+        Ok(1.0-ct)
     }
 }
 

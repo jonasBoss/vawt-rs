@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 approx = "0.5.1"
-argmin = "0.8.1"
+argmin = {version="0.8.1"}
+argmin-math = {version="0.3.0", features=["ndarray_latest-nolinalg-serde"]}
 csv = "1.2.2"
 env_logger = "0.10.0"
 itertools = "0.11.0"

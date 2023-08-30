@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut solver = VAWTSolver::new(&aerofoil);
     solver.re(31_300.0).solidity(0.3525).n_streamtubes(n);
-    let _solution = solver.tsr(3.25).solve_with_beta(0.0);
+    let _solution = solver.tsr(3.25).solve_optimize_beta();
     Ok(())
 }
 
