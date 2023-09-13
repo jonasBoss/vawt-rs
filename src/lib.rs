@@ -95,28 +95,28 @@ impl<'a> VAWTSolver<'a> {
         self
     }
 
-    /// solve the VAWT Turbine with a constant beta angle in radians
+    /// solve the VAWT case with a constant beta angle in radians
     pub fn solve_with_beta(&self, beta: f64) -> VAWTSolution<'a> {
         self.solve_with_beta_fn(|_| beta)
     }
 
-    /// solve the VAWT Turbine with a provided beta angle as function of theta in radians
+    /// solve the VAWT case with a provided beta angle as function of theta in radians
     pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
-        self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
+        self.iter_streamtubes(|case, &theta_up, &theta_down| {
             let beta_up = beta(theta_up);
             let beta_down = beta(theta_down);
-            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(turbine, self.epsilon);
+            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(case, self.epsilon);
             let a_down =
-                StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
+                StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
 
             (beta_up, beta_down, a_up, a_down)
         })
     }
 
-    /// solve the VAWT Turbine while optimizing beta
+    /// solve the VAWT case while optimizing beta
     pub fn solve_optimize_beta(&self) -> VAWTSolution<'a> {
-        self.iter_streamtubes(|turbine, &theta_up, &theta_down| {
-            let cost = OptimizeBeta::new(turbine, self.epsilon, theta_up, theta_down);
+        self.iter_streamtubes(|case, &theta_up, &theta_down| {
+            let cost = OptimizeBeta::new(case, self.epsilon, theta_up, theta_down);
             let solver = ParticleSwarm::new(
                 (
                     Array::from_elem(2, -20f64.to_radians()),
@@ -132,9 +132,9 @@ impl<'a> VAWTSolver<'a> {
             let best_param = res.state.take_best_individual().unwrap().position;
 
             let (beta_up, beta_down) = (best_param[0], best_param[1]);
-            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(turbine, self.epsilon);
+            let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(case, self.epsilon);
             let a_down =
-                StreamTube::new(theta_down, beta_down, a_up).solve_a(turbine, self.epsilon);
+                StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
             (beta_up, beta_down, a_up, a_down)
         })
     }
@@ -150,28 +150,28 @@ impl<'a> VAWTSolver<'a> {
     pub fn cost_fn(&'a self, theta: f64) -> impl 'a + Fn(&Array1<f64>) -> f64 {
         assert!(0.0 < theta && theta < PI);
         let theta_down = 2.0 * PI - theta;
-        let turbine = self.get_turbine();
+        let case = self.get_case();
 
         move |param: &Array1<f64>| {
-            OptimizeBeta::new(&turbine, self.epsilon, theta, theta_down).cost(param)
+            OptimizeBeta::new(&case, self.epsilon, theta, theta_down).cost(param)
         }
     }
 
     /// solve a single streamtube
     pub fn solve_steamtube(&self, theta: f64, beta: f64, a_0: f64) -> StreamTubeSolution<'a> {
-        let turbine = self.get_turbine();
+        let case = self.get_case();
         let tube = StreamTube::new(theta, beta, a_0);
-        let a = tube.solve_a(&turbine, self.epsilon);
-        StreamTubeSolution::new(turbine, tube, a)
+        let a = tube.solve_a(&case, self.epsilon);
+        StreamTubeSolution::new(case, tube, a)
     }
 
     /// iterate over all streamtubes, applying `solve_fn`.
     ///
     /// `solve_fn` is called for each pair of up and downstream streamtubes with:
-    /// `Fn(turbine: &Turbine, theta_up: &f64, theta_down: &f64) -> (beta_up: f64, beta_down: f64, a_up: f64, a_down: f64)`
+    /// `Fn(case: &VAWTCase, theta_up: &f64, theta_down: &f64) -> (beta_up: f64, beta_down: f64, a_up: f64, a_down: f64)`
     fn iter_streamtubes(
         &self,
-        solve_fn: impl Fn(&Turbine, &f64, &f64) -> (f64, f64, f64, f64),
+        solve_fn: impl Fn(&VAWTCase, &f64, &f64) -> (f64, f64, f64, f64),
     ) -> VAWTSolution<'a> {
         let d_t_half = PI / self.n_streamtubes as f64;
         let theta = Array::linspace(d_t_half, PI * 2.0 - d_t_half, self.n_streamtubes);
@@ -185,7 +185,7 @@ impl<'a> VAWTSolver<'a> {
         let (beta_up, beta_down) = beta.multi_slice_mut((slice_up, slice_down));
         let (a_up, a_down) = a.multi_slice_mut((slice_up, slice_down));
 
-        let turbine = self.get_turbine();
+        let case = self.get_case();
         let func = |theta_up: &f64,
                     theta_down: &f64,
                     beta_up: &mut f64,
@@ -197,7 +197,7 @@ impl<'a> VAWTSolver<'a> {
                 theta_up.to_degrees(),
                 theta_down.to_degrees()
             );
-            (*beta_up, *beta_down, *a_up, *a_down) = solve_fn(&turbine, theta_up, theta_down)
+            (*beta_up, *beta_down, *a_up, *a_down) = solve_fn(&case, theta_up, theta_down)
         };
 
         Zip::from(theta.slice(slice_up))
@@ -211,7 +211,7 @@ impl<'a> VAWTSolver<'a> {
         a_0.slice_mut(slice_down).assign(&a.slice(slice_up));
 
         VAWTSolution {
-            turbine,
+            case,
             n_streamtubes: self.n_streamtubes,
             theta,
             beta,
@@ -221,8 +221,8 @@ impl<'a> VAWTSolver<'a> {
         }
     }
 
-    fn get_turbine(&self) -> Turbine<'a> {
-        Turbine {
+    fn get_case(&self) -> VAWTCase<'a> {
+        VAWTCase {
             re: self.re,
             tsr: self.tsr,
             solidity: self.solidity,
@@ -233,7 +233,7 @@ impl<'a> VAWTSolver<'a> {
 
 /// Turbine settings for the VAWT case
 #[derive(Debug, Clone)]
-pub struct Turbine<'a> {
+pub struct VAWTCase<'a> {
     /// Raynoldsnumber of the turbine
     pub re: f64,
     /// Tipspeed ratio of the turbine
@@ -247,7 +247,7 @@ pub struct Turbine<'a> {
 /// The solution of a VAWT case
 #[derive(Debug)]
 pub struct VAWTSolution<'a> {
-    turbine: Turbine<'a>,
+    case: VAWTCase<'a>,
     n_streamtubes: usize,
     theta: Array1<f64>,
     beta: Array1<f64>,
@@ -265,18 +265,18 @@ impl<'a> VAWTSolution<'a> {
             .and(&self.a_0)
             .fold(0.0, |acc, &theta, &beta, &a, &a_0| {
                 let tube = StreamTube::new(theta, beta, a_0);
-                let solution = StreamTubeSolution::new(self.turbine.clone(), tube, a);
+                let solution = StreamTubeSolution::new(self.case.clone(), tube, a);
                 let ct = solution.c_tan();
                 let w = solution.w();
                 acc + ct * w.powi(2)
             });
-        ct * self.turbine.solidity / (self.n_streamtubes as f64)
+        ct * self.case.solidity / (self.n_streamtubes as f64)
     }
 
     /// Power coefficient of the turbine
     pub fn c_power(&self) -> f64 {
         let ct = self.c_torque();
-        ct * self.turbine.tsr
+        ct * self.case.tsr
     }
 
     /// the pitch angle `beta` at the location `theta`
@@ -349,6 +349,6 @@ impl<'a> VAWTSolution<'a> {
         let a = self.a(theta);
         let beta = self.beta(theta);
         let tube = StreamTube::new(theta, beta, a_0);
-        StreamTubeSolution::new(self.turbine.clone(), tube, a)
+        StreamTubeSolution::new(self.case.clone(), tube, a)
     }
 }
