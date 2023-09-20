@@ -43,6 +43,10 @@ fn naca_0018_benchmark(c: &mut Criterion) {
     c.bench_function("naca_0018_const_beta", |b| {
         b.iter(|| testcase.solve_with_beta(0.0))
     });
+
+    c.bench_function("naca_0018_sin_beta", |b| {
+        b.iter(|| testcase.solve_with_beta_fn(|theta| theta.sin() * 10f64.to_radians()))
+    });
 }
 
 criterion_group!(benches, naca_0018_benchmark);
