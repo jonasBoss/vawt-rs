@@ -81,8 +81,7 @@ impl StreamTube {
     /// tangential foil coefficient
     pub(crate) fn c_tan(&self, a: f64, case: &VAWTCase) -> f64 {
         let (_w, alpha, re) = self.w_alpha_re(a, case);
-        case
-            .aerofoil
+        case.aerofoil
             .cl_cd(alpha, re)
             .to_tangential(alpha, self.beta)
             .1

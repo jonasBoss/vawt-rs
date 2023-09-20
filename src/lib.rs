@@ -106,8 +106,7 @@ impl<'a> VAWTSolver<'a> {
             let beta_up = beta(theta_up);
             let beta_down = beta(theta_down);
             let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(case, self.epsilon);
-            let a_down =
-                StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
+            let a_down = StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
 
             (beta_up, beta_down, a_up, a_down)
         })
@@ -133,8 +132,7 @@ impl<'a> VAWTSolver<'a> {
 
             let (beta_up, beta_down) = (best_param[0], best_param[1]);
             let a_up = StreamTube::new(theta_up, beta_up, 0.0).solve_a(case, self.epsilon);
-            let a_down =
-                StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
+            let a_down = StreamTube::new(theta_down, beta_down, a_up).solve_a(case, self.epsilon);
             (beta_up, beta_down, a_up, a_down)
         })
     }
