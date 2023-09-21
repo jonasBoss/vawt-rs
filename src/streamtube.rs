@@ -4,9 +4,9 @@ use std::{
 };
 
 use argmin::core::CostFunction;
-use ndarray::{array, Array1};
+use ndarray::Array1;
 
-use crate::{rot_mat, VAWTCase};
+use crate::{rot_vec, VAWTCase};
 
 #[derive(Debug)]
 pub struct StreamTube {
@@ -249,24 +249,24 @@ impl<'a> StreamTubeSolution<'a> {
 
 /// A velocity in global coordinates
 #[derive(Debug)]
-struct Velocity(Array1<f64>);
+struct Velocity(f64, f64);
 
 impl Velocity {
     pub fn from_global(x: f64, y: f64) -> Self {
-        Self(array![x, y])
+        Self(x, y)
     }
 
     pub fn from_tangential(x: f64, y: f64, theta: f64) -> Self {
-        Velocity(rot_mat(theta).dot(&array![x, y]))
+        let (x, y) = rot_vec(x, y, theta);
+        Velocity(x, y)
     }
 
     pub fn to_foil(&self, theta: f64, beta: f64) -> (f64, f64) {
-        let target = rot_mat(-theta - beta).dot(&self.0);
-        (target[0], target[1])
+        rot_vec(self.0, self.1, -theta - beta)
     }
 
     pub fn magnitude(&self) -> f64 {
-        (self.0[0].powi(2) + self.0[1].powi(2)).sqrt()
+        (self.0.powi(2) + self.1.powi(2)).sqrt()
     }
 }
 
@@ -274,9 +274,7 @@ impl Sub for Velocity {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let Velocity(lhs) = self;
-        let Velocity(rhs) = rhs;
-        Velocity(lhs - rhs)
+        Velocity(self.0 - rhs.0, self.1 - rhs.1)
     }
 }
 
@@ -284,8 +282,6 @@ impl Add for Velocity {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let Velocity(lhs) = self;
-        let Velocity(rhs) = rhs;
-        Velocity(lhs + rhs)
+        Velocity(self.0 + rhs.0, self.1 + rhs.1)
     }
 }

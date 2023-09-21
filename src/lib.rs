@@ -4,7 +4,7 @@ use areofoil::Aerofoil;
 
 use argmin::{core::Executor, solver::particleswarm::ParticleSwarm};
 use log::info;
-use ndarray::{array, s, Array, Array1, Array2, Zip};
+use ndarray::{s, Array, Array1, Zip};
 use ndarray_interp::interp1d::{Interp1D, Linear};
 
 use streamtube::{OptimizeBeta, StreamTube, StreamTubeSolution};
@@ -12,9 +12,11 @@ use streamtube::{OptimizeBeta, StreamTube, StreamTubeSolution};
 pub mod areofoil;
 pub mod streamtube;
 
-/// 2d rotation matrix for angle phi (in radians)
-fn rot_mat(phi: f64) -> Array2<f64> {
-    array![[phi.cos(), (-phi).sin()], [phi.sin(), phi.cos()],]
+fn rot_vec(x: f64, y: f64, alpha: f64) -> (f64, f64) {
+    (
+        alpha.cos() * x + (-alpha).sin() * y,
+        alpha.sin() * x + alpha.cos() * y,
+    )
 }
 
 #[derive(Debug)]

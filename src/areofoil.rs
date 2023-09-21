@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use itertools::Itertools;
-use ndarray::{array, s, stack, Array, Array1, Array2, ArrayView1, ArrayViewMut1, Axis};
+use ndarray::{s, stack, Array, Array2, ArrayView1, ArrayViewMut1, Axis};
 use ndarray_interp::{
     interp1d::{Interp1D, Linear},
     interp2d::{Biliniar, Interp2D, Interp2DVec},
@@ -9,11 +9,11 @@ use ndarray_interp::{
 };
 use thiserror::Error;
 
-use crate::rot_mat;
+use crate::rot_vec;
 
 #[derive(Debug)]
 /// Coefficient of lift and drag
-pub struct ClCd(Array1<f64>);
+pub struct ClCd(f64, f64);
 
 impl ClCd {
     /// convert lift and drag coeffitients to normal and tangential coefficients
@@ -21,23 +21,19 @@ impl ClCd {
     /// # returns
     /// `(c_n: f64, c_t: f64)`
     pub fn to_tangential(&self, alpha: f64, beta: f64) -> (f64, f64) {
-        let inv_drag = array![[1.0, 0.0], [0.0, -1.0]];
-        let target = rot_mat(alpha + beta).dot(&inv_drag.dot(&self.0));
-        (target[0], target[1])
+        rot_vec(self.0, -self.1, alpha + beta)
     }
 
     pub fn to_global(&self, alpha: f64, beta: f64, theta: f64) -> (f64, f64) {
-        let inv_drag = array![[1.0, 0.0], [0.0, -1.0]];
-        let target = rot_mat(alpha + beta + theta).dot(&inv_drag.dot(&self.0));
-        (target[0], target[1])
+        rot_vec(self.0, -self.1, alpha + beta + theta)
     }
 
     pub fn cl(&self) -> f64 {
-        self.0[0]
+        self.0
     }
 
     pub fn cd(&self) -> f64 {
-        self.0[1]
+        self.1
     }
 }
 
@@ -66,10 +62,10 @@ impl Aerofoil {
         if self.symmetric {
             let mut clcd = self.lut.interp(alpha.abs(), re).unwrap();
             clcd[0] *= alpha.signum();
-            ClCd(clcd)
+            ClCd(clcd[0], clcd[1])
         } else {
             let clcd = self.lut.interp(alpha, re).unwrap();
-            ClCd(clcd)
+            ClCd(clcd[0], clcd[1])
         }
     }
 }

@@ -16,7 +16,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         testcase.solve_with_beta(0.0);
     }
     let duration = start.elapsed();
-    println!("Duration for 10'000 solutions: {} microseconds", duration.as_micros());
+    println!(
+        "Duration for 10'000 solutions: {} microseconds",
+        duration.as_micros()
+    );
     Ok(())
 }
 
@@ -46,7 +49,7 @@ fn read_array(path: &str) -> Result<Array2<f64>, Box<dyn Error>> {
     Ok(arr)
 }
 
-fn setup_solver(aerofoil: &Aerofoil) -> VAWTSolver{
+fn setup_solver(aerofoil: &Aerofoil) -> VAWTSolver {
     let mut testcase = VAWTSolver::new(&aerofoil);
     testcase
         .re(31_300.0)
