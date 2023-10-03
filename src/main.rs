@@ -50,7 +50,7 @@ fn read_array(path: &str) -> Result<Array2<f64>, Box<dyn Error>> {
 }
 
 fn setup_solver(aerofoil: &Aerofoil) -> VAWTSolver {
-    let mut testcase = VAWTSolver::new(&aerofoil);
+    let mut testcase = VAWTSolver::new(aerofoil);
     testcase
         .re(31_300.0)
         .solidity(0.3525)

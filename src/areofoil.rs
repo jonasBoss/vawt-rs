@@ -86,6 +86,12 @@ pub struct AerofoilBuilder {
     update_aspect_ratio: bool,
 }
 
+impl Default for AerofoilBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AerofoilBuilder {
     pub fn new() -> Self {
         AerofoilBuilder {
