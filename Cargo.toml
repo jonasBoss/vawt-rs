@@ -13,13 +13,13 @@ csv = "1.2.2"
 env_logger = "0.10.0"
 itertools = "0.11.0"
 log = "0.4.20"
-ndarray = "0.15.6"
+ndarray = {version = "0.15.6", features = ["rayon"]}
 ndarray-csv = "0.5.2"
 ndarray-interp = "0.4.0"
 thiserror = "1.0"
 
 [dev-dependencies]
-ndarray = {version = "0.15", features = ["approx-0_5"] }
+ndarray = {version = "0.15", features = ["approx-0_5" , "rayon"] }
 criterion = "0.5.1"
 
 [[bench]]

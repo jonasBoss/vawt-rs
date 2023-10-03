@@ -103,7 +103,7 @@ impl<'a> VAWTSolver<'a> {
     }
 
     /// solve the VAWT case with a provided beta angle as function of theta in radians
-    pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64) -> VAWTSolution<'a> {
+    pub fn solve_with_beta_fn(&self, beta: impl Fn(f64) -> f64 + Sync) -> VAWTSolution<'a> {
         self.iter_streamtubes(|case, &theta_up, &theta_down| {
             let beta_up = beta(theta_up);
             let beta_down = beta(theta_down);
@@ -171,7 +171,7 @@ impl<'a> VAWTSolver<'a> {
     /// `Fn(case: &VAWTCase, theta_up: &f64, theta_down: &f64) -> (beta_up: f64, beta_down: f64, a_up: f64, a_down: f64)`
     fn iter_streamtubes(
         &self,
-        solve_fn: impl Fn(&VAWTCase, &f64, &f64) -> (f64, f64, f64, f64),
+        solve_fn: impl Fn(&VAWTCase, &f64, &f64) -> (f64, f64, f64, f64) + Sync,
     ) -> VAWTSolution<'a> {
         let d_t_half = PI / self.n_streamtubes as f64;
         let theta = Array::linspace(d_t_half, PI * 2.0 - d_t_half, self.n_streamtubes);
@@ -206,7 +206,7 @@ impl<'a> VAWTSolver<'a> {
             .and(beta_down)
             .and(a_up)
             .and(a_down)
-            .for_each(func);
+            .par_for_each(func);
 
         a_0.slice_mut(slice_down).assign(&a.slice(slice_up));
 
