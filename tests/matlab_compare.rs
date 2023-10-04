@@ -92,7 +92,7 @@ fn naca0018_solution(
     Ok((aerofoil, matlab_solution, solution))
 }
 
-fn map_theta<'a, F: Fn(f64) -> f64>(matlab_solution: &MatlabSolution, f: F) -> Array1<f64> {
+fn map_theta<F: Fn(f64) -> f64>(matlab_solution: &MatlabSolution, f: F) -> Array1<f64> {
     Array::from_iter(matlab_solution.theta().iter().map(move |&theta| f(theta)))
 }
 
