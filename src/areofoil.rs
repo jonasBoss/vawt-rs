@@ -59,13 +59,15 @@ impl Aerofoil {
     /// The coefficient of lift and drag ([`ClCd`]) at the given Reynolds number
     /// and angle of attack in radians
     pub fn cl_cd(&self, alpha: f64, re: f64) -> ClCd {
+        let mut buffer = [0.0, 0.0];
+        let buf_view = ArrayViewMut1::from(buffer.as_mut_slice());
+
         if self.symmetric {
-            let mut clcd = self.lut.interp(alpha.abs(), re).unwrap();
-            clcd[0] *= alpha.signum();
-            ClCd(clcd[0], clcd[1])
+            self.lut.interp_into(alpha.abs(), re, buf_view).unwrap();
+            ClCd(buffer[0] * alpha.signum(), buffer[1])
         } else {
-            let clcd = self.lut.interp(alpha, re).unwrap();
-            ClCd(clcd[0], clcd[1])
+            self.lut.interp_into(alpha, re, buf_view).unwrap();
+            ClCd(buffer[0], buffer[1])
         }
     }
 }

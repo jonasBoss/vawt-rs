@@ -19,7 +19,7 @@ ndarray-interp = "0.4.0"
 thiserror = "1.0"
 
 [dev-dependencies]
-ndarray = {version = "0.15", features = ["approx-0_5" , "rayon"] }
+ndarray = {version = "0.15", features = ["approx-0_5", "rayon" ] }
 criterion = "0.5.1"
 
 [[bench]]
