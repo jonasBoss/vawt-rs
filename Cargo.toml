@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 approx = "0.5.1"
-argmin = {version="0.8.1"}
-argmin-math = {version="0.3.0", features=["ndarray_latest-nolinalg-serde"]}
+argmin = {version="0.10.0"}
+argmin-math = {version="0.4.0", features=["ndarray_latest-nolinalg"]}
 csv = "1.2.2"
-env_logger = "0.10.0"
-itertools = "0.11.0"
+env_logger = "0.11.0"
+itertools = "0.12.0"
 log = "0.4.20"
 ndarray = {version = "0.15.6", features = ["rayon"]}
 ndarray-csv = "0.5.2"
@@ -25,3 +25,6 @@ criterion = "0.5.1"
 [[bench]]
 name = "vawt_benchmark"
 harness = false
+
+[profile.release]
+lto = true
