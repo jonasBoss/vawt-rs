@@ -5,7 +5,7 @@ and extends the model by allowing for variable pitch angles.
 
 This allows for optimization of the pitch angle over the whole rotation of the turbine.
 The below charts show an optimized pitch angle and the resulting increase of the Power coefficient.
-![pitch_optimization.png] ![cp_optimization.png]
+![pitch_optimization.png](pitch_optimization.png) ![cp_optimization.png](cp_optimization.png)
 
 
 # Examples
